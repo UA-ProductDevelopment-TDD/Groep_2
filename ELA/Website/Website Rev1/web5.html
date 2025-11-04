@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Arduino Seriële Monitor met Radarweergave Bovenste Helft (-90° tot +90°)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #log {
+            border: 1px solid #ccc;
+            padding: 10px;
+            min-height: 150px;
+            background-color: #f4f4f4;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            overflow-y: hidden;
+        }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        
+        /* --- STIJLEN VOOR DE RADARWEERGAVE --- */
+        #radarContainer {
+            width: 100%;
+            max-width: 800px; 
+            margin: 20px auto; 
+            position: relative;
+            /* Nu 1:1 aspect ratio voor de container om de cirkel de ruimte te geven */
+            padding-bottom: 100%; 
+            height: 0;
+            overflow: hidden; 
+            box-sizing: border-box;
+        }
+
+        #radarSVG {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block; 
+            background-color: #f0f8ff; 
+        }
+
+        .radar-line {
+            stroke: steelblue; 
+            stroke-width: 1; 
+            transition: stroke 0.1s ease-out; 
+        }
+        
+        /* Cirkel voor de radar-basis */
+        .radar-base-arc {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 1;
+        }
+
+        /* Indicatoren voor de graden */
+        .degree-label {
+            font-family: Arial, sans-serif;
+            font-size: 10px;
+            fill: #555;
+            text-anchor: middle;
+        }
+
+        /* Middenpunt */
+        .center-dot {
+            fill: #333;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Arduino Seriële Data</h1>
+    
+    <button id="connectButton">Verbind met Arduino</button>
+    <hr>
+    
+    <h2>Radarweergave Bovenste Helft (-90° tot +90°)</h2>
+    <div id="radarContainer">
+        <svg id="radarSVG" viewBox="0 0 1000 500">
+            <line x1="0" y1="500" x2="1000" y2="500" stroke="#333" stroke-width="2"/>
+            
+            <path class="radar-base-arc" d="M 0 500 A 500 500 0 0 1 1000 500"></path>
+            
+            <circle class="center-dot" cx="500" cy="500" r="5"></circle>
+        </svg>
+    </div>
+
+    <hr>
+
+    <h2>Laatste 5 Regels Ontvangen Data:</h2>
+    <div id="log">Wacht op verbinding...</div>
+
+    <script>
+        const connectButton = document.getElementById('connectButton');
+        const logElement = document.getElementById('log');
+        const radarSVG = document.getElementById('radarSVG'); 
+        const maxLines = 5;
+        const numberOfSensors = 180; 
+        const maxRadarDistance = 450; // Max lijnlengte, minder dan 500 om ruimte voor labels te houden
+        let port;
+        let reader;
+        let lineBuffer = [];
+        let keepReading = false;
+        
+        // --- SVG-SPECIFIEKE VARIABELEN ---
+        const svgWidth = 1000;
+        const svgHeight = 500; // De viewBox hoogte is 500
+        const centerX = svgWidth / 2; // 500
+        const centerY = svgHeight;    // 500. Dit is nu het middelpunt op de horizontale as
+        
+        const radarLines = []; 
+        
+        // BELANGRIJK: Pas deze aan naar de maximale meetafstand van je sensor (bijv. 400 cm)
+        const maxSensorDistance = 200; 
+
+        // Initialiseer de radarlijnen in SVG
+        for (let i = 0; i < numberOfSensors; i++) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.classList.add('radar-line');
+            line.setAttribute('x1', centerX);
+            line.setAttribute('y1', centerY);
+            line.setAttribute('x2', centerX); 
+            line.setAttribute('y2', centerY); 
+            line.dataset.position = i; 
+            radarSVG.appendChild(line);
+            radarLines.push(line);
+        }
+
+        // Voeg graadaanduidingen toe (-90° tot +90°)
+        for (let i = -90; i <= 90; i += 30) {
+            // Hoeken omzetten naar Radialen. De -90 tot +90 graden van de radar komen overeen met 
+            // 180 tot 0 graden in het SVG cartesiaanse systeem.
+            // i=-90 wordt 180 graden (links)
+            // i=0 wordt 90 graden (boven)
+            // i=90 wordt 0 graden (rechts)
+            const angleRad = (90 - i) * (Math.PI / 180); 
+            const textRadius = maxRadarDistance + 30; 
+            
+            const textX = centerX + textRadius * Math.cos(angleRad);
+            const textY = centerY - textRadius * Math.sin(angleRad); // Let op de MINUS, want SVG Y is omgekeerd!
+
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.classList.add('degree-label');
+            label.setAttribute('x', textX);
+            label.setAttribute('y', textY); 
+            
+            // Pas de tekst-anker aan voor betere uitlijning
+            if (i === -90) {
+                label.style.textAnchor = 'end';
+                label.setAttribute('y', textY + 5);
+            } else if (i === 90) {
+                label.style.textAnchor = 'start';
+                label.setAttribute('y', textY + 5);
+            } else {
+                label.style.textAnchor = 'middle';
+            }
+
+            label.textContent = `${i}°`;
+            radarSVG.appendChild(label);
+        }
+
+        // Klasse om de inkomende stream op te splitsen in regels (ongewijzigd)
+        class LineBreakTransformer {
+            // ... (blijft ongewijzigd)
+             constructor() { this.container = ''; }
+             transform(chunk, controller) {
+                this.container += chunk;
+                const lines = this.container.split('\r\n');
+                this.container = lines.pop();
+                lines.forEach(line => controller.enqueue(line));
+            }
+            flush(controller) { controller.enqueue(this.container); }
+        }
+        
+        // AANGEPASTE FUNCTIE: Update de radarweergave
+        function updateRadarDisplay(dataString) {
+            const parts = dataString.split(':');
+            if (parts.length === 2) {
+                const position = parseInt(parts[0], 10); // 0 (links) tot 179 (rechts)
+                let value = parseFloat(parts[1]); 
+
+                if (position >= 0 && position < numberOfSensors && !isNaN(value)) {
+                    const line = radarLines[position];
+                    
+                    // Schaal de afstandswaarde
+                    let scaledDistance = (value / maxSensorDistance) * maxRadarDistance;
+                    scaledDistance = Math.min(scaledDistance, maxRadarDistance); 
+                    scaledDistance = Math.max(scaledDistance, 0); 
+
+                    // --- CRUCIALE WIJZIGING: Hoekschaal voor Bovenste Helft ---
+                    // 1. Schaal Arduino positie (0-179) naar hoekbereik 180 graden (0-179.x)
+                    const normalizedAngle = position * (180 / numberOfSensors);
+                    
+                    // 2. Dit bereik (0-180) komt overeen met de hoek in de radar:
+                    //    - 0 (Arduino) is -90° (radar)
+                    //    - 90 (Arduino) is 0° (radar)
+                    //    - 180 (Arduino) is +90° (radar)
+                    
+                    // 3. De hoek voor de COS/SIN functie moet zijn:
+                    //    - 0 (rechts) tot 180 (links)
+                    //    - We gebruiken 180 - normalizedAngle. Hierdoor:
+                    //      - Positie 0 -> 180° (links)
+                    //      - Positie 90 -> 90° (boven)
+                    //      - Positie 179 -> ~0° (rechts)
+                    const angleRad = (180 - normalizedAngle) * (Math.PI / 180); 
+
+                    // Bereken de eindpunten van de lijn
+                    // COS voor X-as, SIN voor Y-as
+                    const endX = centerX + scaledDistance * Math.cos(angleRad);
+                    const endY = centerY - scaledDistance * Math.sin(angleRad); // Gebruik MINUS voor Y!
+
+                    if (line) {
+                        line.setAttribute('x2', endX);
+                        line.setAttribute('y2', endY);
+                        
+                        line.style.stroke = 'red';
+                        setTimeout(() => line.style.stroke = 'steelblue', 100); 
+                    }
+                }
+            }
+        }
+    
+        // De rest van de verbindings- en leesfuncties blijven ongewijzigd
+
+        connectButton.addEventListener('click', async () => {
+            if (port) {
+                await disconnectPort();
+            } else {
+                await connectPort();
+            }
+        });
+    
+        async function connectPort() {
+            try {
+                port = await navigator.serial.requestPort({ /* filters: [...] */ });
+                await port.open({ baudRate: 115200 }); 
+                
+                logElement.textContent = "Verbonden! Wachten op data...";
+                connectButton.textContent = "Verbinding Verbreken";
+                
+                startReading();
+    
+            } catch (error) {
+                logElement.textContent = `Fout bij verbinding: ${error.message}`;
+                port = null;
+                console.error(error);
+            }
+        }
+        
+        async function disconnectPort() {
+            if (reader) {
+                keepReading = false;
+                await reader.cancel();
+                reader.releaseLock();
+                reader = null;
+            }
+    
+            if (port) {
+                await port.close();
+                port = null;
+                logElement.textContent = "Verbinding Verbroken.";
+                connectButton.textContent = "Verbind met Arduino";
+            }
+            lineBuffer = [];
+        }
+    
+        function startReading() {
+            keepReading = true;
+            readLoop();
+        }
+        
+        async function readLoop() {
+            const decoder = new TextDecoderStream();
+            port.readable.pipeTo(decoder.writable);
+            const inputStream = decoder.readable
+                .pipeThrough(new TransformStream(new LineBreakTransformer()));
+            reader = inputStream.getReader();
+    
+            try {
+                while (keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break; 
+                    }
+                    
+                    if (value) {
+                        const trimmedValue = value.trim();
+                        updateRadarDisplay(trimmedValue); 
+                        
+                        lineBuffer.push(trimmedValue);
+                        
+                        while (lineBuffer.length > maxLines) {
+                            lineBuffer.shift();
+                        }
+                        
+                        logElement.textContent = lineBuffer.join('\n');
+                    }
+                }
+            } catch (error) {
+                console.error('Leesfout:', error);
+                await disconnectPort();
+            } finally {
+                if (reader) {
+                    reader.releaseLock();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
