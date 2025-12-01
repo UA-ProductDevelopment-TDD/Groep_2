@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>
+        Dual Mousebot
+    </title>
+    <meta name="viewport" content="user-scalable=no">
+    <style>
+        /* Verzeker dat de canvas de volledige breedte inneemt en de body geen scrollbalken heeft */
+        body {
+            position: fixed; 
+            font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+            color: rgb(128, 128, 128);
+            font-size: xx-large;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Om het schuiven op mobiel te voorkomen */
+        }
+        canvas {
+            display: block; /* Om onnodige marges onder de canvas te verwijderen */
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center">
+        DUAL MOUSEBOT </h1>
+    
+    <div style="display: flex; justify-content: space-around; text-align: center;">
+        <p>
+            **Joystick 1 (Links)**<br>
+            X: <span id="x_coordinate1"> 0 </span>
+            Y: <span id="y_coordinate1"> 0 </span>
+            Speed: <span id="speed1"> 0 </span> %
+            Angle: <span id="angle1"> 0 </span>
+        </p>
+        
+        <p>
+            **Joystick 2 (Rechts)**<br>
+            X: <span id="x_coordinate2"> 0 </span>
+            Y: <span id="y_coordinate2"> 0 </span>
+            Speed: <span id="speed2"> 0 </span> %
+            Angle: <span id="angle2"> 0 </span>
+        </p>
+    </div>
+
+    <canvas id="canvas" name="game"></canvas>
+
+    <script>
+        var canvas, ctx;
+
+        // Variabelen voor de algemene canvas afmetingen en joystick grootte
+        var width, height, radius;
+        
+        // Variabelen voor Joystick 1
+        var joystick1_x_orig, joystick1_y_orig; // Oorspronkelijke (center) positie van de achtergrondcirkel
+        var joystick1_x_pos, joystick1_y_pos;   // Huidige positie van de beweegbare joystick
+        let joystick1_paint = false; // Status: wordt deze joystick momenteel getekend/gebruikt?
+        let joystick1_coord = { x: 0, y: 0 }; // Huidige aanraak-/muiscoördinaten
+
+        // Variabelen voor Joystick 2
+        var joystick2_x_orig, joystick2_y_orig;
+        var joystick2_x_pos, joystick2_y_pos;
+        let joystick2_paint = false;
+        let joystick2_coord = { x: 0, y: 0 };
+
+
+        window.addEventListener('load', () => {
+
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');          
+            resize(); 
+
+            // Event listeners voor muis en touch
+            document.addEventListener('mousedown', startDrawing);
+            document.addEventListener('mouseup', stopDrawing);
+            document.addEventListener('mousemove', Draw);
+
+            document.addEventListener('touchstart', startDrawing);
+            document.addEventListener('touchend', stopDrawing);
+            document.addEventListener('touchcancel', stopDrawing);
+            document.addEventListener('touchmove', Draw);
+            window.addEventListener('resize', resize);
+        });
+
+        // Hulpfunctie om de coördinaten van de muis/touch te krijgen
+        function getPosition(event) {
+            let rect = canvas.getBoundingClientRect();
+            let x, y;
+
+            if (event.touches && event.touches.length > 0) {
+                // Gebruik de eerste touch-coördinaat als standaard
+                x = event.touches[0].clientX - rect.left;
+                y = event.touches[0].clientY - rect.top;
+            } else {
+                x = event.clientX - rect.left;
+                y = event.clientY - rect.top;
+            }
+            return { x: x, y: y };
+        }
+
+        // Bepaalt of een punt binnen de achtergrondcirkel van een joystick valt
+        function is_it_in_the_circle(x, y, x_orig, y_orig) {
+            var current_radius = Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2));
+            return radius + 20 >= current_radius; // +20 is de marge van de achtergrond
+        }
+
+        // Functie om de afmetingen en posities opnieuw in te stellen
+        function resize() {
+            width = window.innerWidth;
+            radius = Math.min(width / 6, 100); // Maak de radius dynamisch en niet te groot
+            height = radius * 4.5; // Hoogte is genoeg voor de joysticks
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            
+            // Posities voor twee joysticks (links en rechts)
+            joystick1_x_orig = width / 4;
+            joystick1_y_orig = height / 2;
+            
+            joystick2_x_orig = width * 3 / 4;
+            joystick2_y_orig = height / 2;
+
+            // Standaard joystick positie is in het midden van de achtergrond
+            joystick1_x_pos = joystick1_x_orig;
+            joystick1_y_pos = joystick1_y_orig;
+            joystick2_x_pos = joystick2_x_orig;
+            joystick2_y_pos = joystick2_y_orig;
+
+            drawAll(); // Teken alles opnieuw na resizing
+        }
+
+        // Teken de achtergrond van één joystick
+        function background(x_orig, y_orig) {
+            ctx.beginPath();
+            ctx.arc(x_orig, y_orig, radius + 20, 0, Math.PI * 2, true);
+            ctx.fillStyle = '#ECE5E5';
+            ctx.fill();
+        }
+
+        // Teken de beweegbare knop van één joystick
+        function joystick(x, y, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = '#F6ABAB';
+            ctx.lineWidth = 8;
+            ctx.stroke();
+        }
+
+        // Teken beide joysticks en hun achtergronden
+        function drawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Teken Joystick 1
+            background(joystick1_x_orig, joystick1_y_orig);
+            joystick(joystick1_x_pos, joystick1_y_pos, '#F08080'); // Rood/Oranje
+            
+            // Teken Joystick 2
+            background(joystick2_x_orig, joystick2_y_orig);
+            joystick(joystick2_x_pos, joystick2_y_pos, '#8080F0'); // Blauw
+        }
+
+
+        // Start de tekening (muis omlaag / touch start)
+        function startDrawing(event) {
+            event.preventDefault(); // Voorkomt standaard browseracties (zoals scrollen op touch)
+            
+            let coords;
+            // Als het een touch event is, doorloop alle touches
+            if (event.touches && event.touches.length > 0) {
+                for (let i = 0; i < event.touches.length; i++) {
+                    coords = getPosition(event.touches[i]);
+                    // Controleer of de aanraking binnen Joystick 1 valt EN deze nog niet actief is
+                    if (!joystick1_paint && is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                        joystick1_paint = true;
+                        joystick1_coord = coords;
+                        Draw(event.touches[i], 1);
+                        return; // Behandel slechts één joystick per aanraking start
+                    } 
+                    // Controleer of de aanraking binnen Joystick 2 valt EN deze nog niet actief is
+                    else if (!joystick2_paint && is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                        joystick2_paint = true;
+                        joystick2_coord = coords;
+                        Draw(event.touches[i], 2);
+                        return; // Behandel slechts één joystick per aanraking start
+                    }
+                }
+            } 
+            // Als het een muis event is (single-touch/click)
+            else {
+                coords = getPosition(event);
+                if (is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                    joystick1_paint = true;
+                    joystick1_coord = coords;
+                    Draw(event, 1);
+                } else if (is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                    joystick2_paint = true;
+                    joystick2_coord = coords;
+                    Draw(event, 2);
+                }
+            }
+        }
+
+
+        // Stop de tekening (muis omhoog / touch einde)
+        function stopDrawing(event) {
+            event.preventDefault();
+            
+            // Bepaal welke joystick is losgelaten (dit is complexer met touches, dus we resetten ze beide)
+            // Voor touch events moet je kijken naar event.changedTouches om te zien welke touch stopte.
+            // Voor eenvoud, en omdat we geen touch ID's bijhouden, resetten we beide indien nodig
+            let shouldRedraw = false;
+            
+            if (joystick1_paint) {
+                joystick1_paint = false;
+                joystick1_x_pos = joystick1_x_orig;
+                joystick1_y_pos = joystick1_y_orig;
+                document.getElementById("x_coordinate1").innerText = 0;
+                document.getElementById("y_coordinate1").innerText = 0;
+                document.getElementById("speed1").innerText = 0;
+                document.getElementById("angle1").innerText = 0;
+                shouldRedraw = true;
+            }
+
+            if (joystick2_paint) {
+                joystick2_paint = false;
+                joystick2_x_pos = joystick2_x_orig;
+                joystick2_y_pos = joystick2_y_orig;
+                document.getElementById("x_coordinate2").innerText = 0;
+                document.getElementById("y_coordinate2").innerText = 0;
+                document.getElementById("speed2").innerText = 0;
+                document.getElementById("angle2").innerText = 0;
+                shouldRedraw = true;
+            }
+            
+            if (shouldRedraw) {
+                drawAll();
+            }
+        }
+
+        // Teken/update de joysticks
+        function Draw(event, specific_joystick_id = 0) {
+            event.preventDefault();
+
+            // Als het een muis event is, kijk of een van de joysticks actief is
+            if (!event.touches && (joystick1_paint || joystick2_paint)) {
+                let coords = getPosition(event);
+                if (joystick1_paint) {
+                    joystick1_coord = coords;
+                    updateJoystick(1);
+                } else if (joystick2_paint) {
+                    joystick2_coord = coords;
+                    updateJoystick(2);
+                }
+            } 
+            // Als het een touch event is, doorloop alle actieve touches
+            else if (event.touches && event.touches.length > 0) {
+                drawAll(); // Wis en teken alles opnieuw voor de soepelste update
+                
+                for (let i = 0; i < event.touches.length; i++) {
+                    let coords = getPosition(event.touches[i]);
+                    let touch_id = event.touches[i].identifier;
+
+                    // Dit is een vereenvoudigde aanpak omdat we geen touch ID's koppelen. 
+                    // We gaan er nu van uit dat als een joystick actief is (paint=true),
+                    // de dichtstbijzijnde touch die joystick bestuurt.
+                    
+                    if (joystick1_paint) {
+                        joystick1_coord = coords;
+                        updateJoystick(1);
+                    }
+                    if (joystick2_paint) {
+                        joystick2_coord = coords;
+                        updateJoystick(2);
+                    }
+                }
+            }
+            
+            // Als het een startDrawing event was, en we weten welke joystick (1 of 2)
+            else if (specific_joystick_id === 1 && joystick1_paint) {
+                 updateJoystick(1);
+            } else if (specific_joystick_id === 2 && joystick2_paint) {
+                 updateJoystick(2);
+            }
+            
+            // Teken alles opnieuw, alleen als er een update is geweest
+            if (joystick1_paint || joystick2_paint) {
+                drawAll();
+            }
+        } 
+
+
+        // Logica om een specifieke joystick bij te werken (1 of 2)
+        function updateJoystick(id) {
+            let x_orig, y_orig, coord, x_pos_ref, y_pos_ref;
+            let x_coord_id, y_coord_id, speed_id, angle_id;
+            let color;
+            
+            // Wijs de juiste variabelen toe op basis van de ID
+            if (id === 1) {
+                x_orig = joystick1_x_orig;
+                y_orig = joystick1_y_orig;
+                coord = joystick1_coord;
+                x_pos_ref = 'joystick1_x_pos';
+                y_pos_ref = 'joystick1_y_pos';
+                x_coord_id = "x_coordinate1";
+                y_coord_id = "y_coordinate1";
+                speed_id = "speed1";
+                angle_id = "angle1";
+                color = '#F08080';
+            } else if (id === 2) {
+                x_orig = joystick2_x_orig;
+                y_orig = joystick2_y_orig;
+                coord = joystick2_coord;
+                x_pos_ref = 'joystick2_x_pos';
+                y_pos_ref = 'joystick2_y_pos';
+                x_coord_id = "x_coordinate2";
+                y_coord_id = "y_coordinate2";
+                speed_id = "speed2";
+                angle_id = "angle2";
+                color = '#8080F0';
+            } else {
+                return; // Onbekende ID
+            }
+
+
+            var angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
+            var current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
+
+            // Bereken de positie van de beweegbare knop
+            let x, y;
+            if (radius >= current_radius) {
+                x = coord.x;
+                y = coord.y;
+            } else {
+                x = radius * Math.cos(angle) + x_orig;
+                y = radius * Math.sin(angle) + y_orig;
+            }
+
+            // Update de globale positie variabelen
+            if (id === 1) {
+                joystick1_x_pos = x;
+                joystick1_y_pos = y;
+            } else {
+                joystick2_x_pos = x;
+                joystick2_y_pos = y;
+            }
+
+
+            // Bereken de weer te geven waarden
+            let angle_in_degrees;
+            if (Math.sign(angle) == -1) {
+                angle_in_degrees = Math.round(-angle * 180 / Math.PI);
+            } else {
+                angle_in_degrees = Math.round(360 - angle * 180 / Math.PI);
+            }
+
+            var speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
+
+            var x_relative = Math.round(x - x_orig);
+            var y_relative = Math.round(y - y_orig);
+            
+            // Update de display elementen
+            document.getElementById(x_coord_id).innerText = x_relative;
+            document.getElementById(y_coord_id).innerText = y_relative;
+            document.getElementById(speed_id).innerText = speed;
+            document.getElementById(angle_id).innerText = angle_in_degrees;
+        } 
+    </script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geneste Landschap Lay-out (Kolommen 2:1, Rijen 2:1)</title>
+    <style>
+        /* 1. Algemene Reset en Instellingen */
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* 2. De Vlakken (Kolommen) */
+        .container {
+            display: flex; /* Standaard: Flexbox voor Portret-stapeling */
+            flex-direction: column; /* Standaard: Kolommen onder elkaar */
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        .vlak {
+            width: 100%;
+            height: 50vh; /* In Portret-modus: elk vlak 50% van de hoogte */
+            box-sizing: border-box;
+            
+            /* Belangrijk: Maak elk vlak een Flex Container voor de rijen */
+            display: flex;
+            flex-direction: column; /* Stapel de inhoud (rijen) binnen het vlak */
+        }
+
+        .vlak-links {
+            background-color: #007aff; /* Helder iPhone Blauw */
+            color: white;
+        }
+
+        .vlak-rechts {
+            background-color: #f0f0f0; /* Lichtgrijs/Wit */
+        }
+
+        /* 3. De Geneste Rijen Binnen Elk Vlak */
+        .vlak-inhoud {
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .rij-boven {
+            background-color: rgba(255, 255, 255, 0.1); /* Lichte overlay voor links */
+            /* DE RIJ-VERHOUDING: Bovenste rij 2x zo groot als de onderste rij */
+            flex-grow: 2; 
+        }
+
+        .rij-onder {
+            background-color: rgba(0, 0, 0, 0.1); /* Donkere overlay voor contrast */
+            flex-grow: 1;
+            /* Pas tekstkleur aan voor contrasterende rijen in het linkse vlak */
+            color: #333;
+        }
+        
+        /* Aparte stijl voor de rechter kolom om leesbaarheid te garanderen */
+        .vlak-rechts .rij-boven {
+            background-color: #ffffff; /* Wit */
+            color: #333;
+        }
+        .vlak-rechts .rij-onder {
+            background-color: #e0e0e0; /* Donkerder grijs */
+            color: #333;
+        }
+
+
+        /* 4. Media Query voor Landschap Modus (Kolommen 2:1, Rijen 2:1) */
+        @media (min-width: 430px) {
+            .container {
+                /* Hoofd-layout: CSS Grid voor 2:1 kolommen */
+                display: grid;
+                grid-template-columns: 2fr 1fr; /* Kolommen: Links 2/3, Rechts 1/3 */
+                min-height: 100vh; 
+            }
+
+            .vlak {
+                height: 100vh; /* Vlakken nemen de volledige schermhoogte in */
+            }
+            
+            /* Optioneel: Visuele scheiding tussen de rijen in de linker kolom */
+            .vlak-links .rij-onder {
+                border-top: 2px solid rgba(255, 255, 255, 0.3);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="vlak vlak-links">
+            <div class="vlak-inhoud rij-boven">
+                <div>
+                    <h1>HOOFDSECTIE (Links Boven)</h1>
+                    <h2>2/3 van de Hoogte van dit Vlak</h2>
+                    <p>Dit is de grootste sectie (2/3 van de totale hoogte in dit vlak). Hier hoort de **belangrijkste content** te staan.</p>
+                </div>
+            </div>
+            <div class="vlak-inhoud rij-onder">
+                <div>
+                    <h3>Onderste Sectie (Links Onder)</h3>
+                    <p>1/3 van de Hoogte. Gebruik voor een korte oproep tot actie.</p>
+                    <a href="#" style="color: white; border: 1px solid white; padding: 8px 15px; text-decoration: none; display: inline-block;">Actie Nu!</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="vlak vlak-rechts">
+            <div class="vlak-inhoud rij-boven">
+                <div>
+                    <h1>ZIJBALK INFO (Rechts Boven)</h1>
+                    <h2>2/3 van de Hoogte van dit Vlak</h2>
+                    <p>Dit gebied is perfect voor secundaire informatie of een navigatiemenu in de landschapmodus.</p>
+                </div>
+            </div>
+            <div class="vlak-inhoud rij-onder">
+                <div>
+                    <h3>Footer (Rechts Onder)</h3>
+                    <p>1/3 van de Hoogte. Contact of sociale links.</p>
+                    <a href="#" style="color: #007aff; border: 1px solid #007aff; padding: 8px 15px; text-decoration: none; display: inline-block;">Meer Details</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

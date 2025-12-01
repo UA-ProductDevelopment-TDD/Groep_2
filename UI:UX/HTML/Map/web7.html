@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Radiale Grafiek - Web Serial</title>
+    <!-- Tailwind CSS voor styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js voor de grafiek -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Aangepaste styling -->
+    <style>
+        /* Standaard donker thema */
+        :root {
+            --bg-color: #1f2937; /* Gray 800 */
+            --card-bg: #374151; /* Gray 700 */
+            --text-color: #f3f4f6; /* Gray 100 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        .container-card {
+            background-color: var(--card-bg);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        /* Zorgt ervoor dat de canvas op mobiel goed schaalt */
+        .chart-container {
+            position: relative;
+            height: 100%;
+            width: 100%;
+            max-height: 80vh;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 flex flex-col items-center min-h-screen">
+
+    <div class="w-full max-w-4xl container-card p-6 md:p-8 rounded-xl">
+        <h1 class="text-3xl font-bold mb-4 text-center text-indigo-400">Real-time Radiale Data Visualisatie (Web Serial)</h1>
+        <p class="text-gray-300 text-center mb-6">Verbind direct met Arduino voor data (Graden;Afstand).</p>
+
+        <!-- Container voor de Grafiek -->
+        <div class="chart-container mx-auto p-4 bg-gray-800 rounded-lg shadow-inner">
+            <canvas id="radialDataChart"></canvas>
+        </div>
+
+        <!-- Bediening en Status -->
+        <div class="mt-8 flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 sm:space-x-4">
+            <div class="w-full sm:w-1/2">
+                <p class="text-lg font-semibold mb-2">Laatst Ontvangen Data:</p>
+                <div id="lastData" class="p-3 bg-gray-600 rounded-lg text-yellow-300 font-mono">Nog niet verbonden...</div>
+            </div>
+            <div class="w-full sm:w-1/2">
+                <!-- De knop om de Web Serial API-verbinding te starten -->
+                <button id="connectSerialButton"
+                        class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-lg disabled:bg-gray-500"
+                        onclick="connectSerial()">
+                    Verbind met Arduino (Serial)
+                </button>
+            </div>
+        </div>
+
+        <!-- Opmerking over Seriële Verbinding -->
+        <div id="connectionWarning" class="mt-6 p-4 bg-blue-800/50 border border-blue-700 rounded-lg">
+            <p class="text-sm text-blue-300">
+                **Opmerking:** Dit vereist een browser die de Web Serial API ondersteunt (bijv. Chrome, Edge) en de pagina moet via **HTTPS** worden geladen. U moet handmatig de poort selecteren na het klikken op de knop.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Globale variabelen
+        let dataChart;
+        let serialPort;
+        let isConnected = false;
+        
+        // Buffer voor het opslaan van onvolledige inkomende seriële data
+        let serialDataBuffer = '';
+
+        // Nieuwe Definitie: 360 virtuele assen (één voor elke graad)
+        const TOTAL_DEGREES = 360;
+        const AXIS_ANGLES = Array.from({length: TOTAL_DEGREES}, (_, i) => i); // 0, 1, 2, ..., 359
+        
+        // De labels worden nu dunner weergegeven om de grafiek leesbaar te houden (elke 45 graden)
+        // Aangepaste logica: Draai de labels 90 graden tegen de klok in (dus 270° staat bovenaan, waar 0° stond)
+        const AXIS_LABELS = AXIS_ANGLES.map(index => {
+            // Bereken de oorspronkelijke hoek die bij deze gedraaide index hoort
+            // (index - 90) met modulo 360 om de array te wrappen
+            let originalAngle = (index + 90 + TOTAL_DEGREES) % TOTAL_DEGREES;
+            
+            // Toon alleen labels op kwadranten (elke 45 graden)
+            if (originalAngle % 45 === 0) {
+                // Toon het label van de oorspronkelijke hoek
+                return `${originalAngle}°`; 
+            }
+            return ''; // Lege strings voor de rest
+        });
+        
+        // Initiële dataset: 360 afstandswaarden, allemaal 0
+        let radialData = new Array(TOTAL_DEGREES).fill(0); 
+
+        const statusDisplay = document.getElementById('lastData');
+        const connectButton = document.getElementById('connectSerialButton');
+        const warningBox = document.getElementById('connectionWarning');
+
+        // === GRAFIEK INITIALISATIE ===
+        function initializeChart() {
+            const ctx = document.getElementById('radialDataChart').getContext('2d');
+            
+            dataChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: AXIS_LABELS,
+                    datasets: [{
+                        label: 'Afstand tot Middenpunt',
+                        data: radialData,
+                        backgroundColor: 'rgba(99, 102, 241, 0.2)', // Indigo 400 met transparantie
+                        borderColor: 'rgba(99, 102, 241, 1)',
+                        pointBackgroundColor: 'rgb(99, 102, 241)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(99, 102, 241)',
+                        borderWidth: 2,
+                        pointRadius: 0, // Punten verbergen voor een vloeiende lijn
+                        tension: 0.1,
+                        spanGaps: true // Lijn doorlaten waar er geen data is (optioneel)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        r: {
+                            angleLines: {
+                                color: 'rgba(243, 244, 246, 0.3)', // Lichte lijnen
+                            },
+                            grid: {
+                                color: 'rgba(243, 244, 246, 0.3)', // Lichte rasterlijnen
+                            },
+                            pointLabels: {
+                                font: { size: 14, weight: 'bold' },
+                                color: 'rgb(209, 213, 219)', // Gray 300
+                            },
+                            // De schaal van de afstand (Y-as)
+                            min: 0,
+                            max: 100, // Max waarde van 8-bit sensor (of pas aan)
+                            ticks: {
+                                color: 'rgb(209, 213, 219)',
+                                backdropColor: 'var(--card-bg)', // Achtergrondkleur van de schaaltekst
+                                // Toon de ticks als float-waarden (met één decimaal)
+                                callback: function(value) { return value.toFixed(1); } 
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: 'rgb(209, 213, 219)'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(55, 65, 85, 0.9)', // Donkere tooltip
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            // Zorg ervoor dat de tooltip de float-waarden correct toont
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    label += context.parsed.r.toFixed(2); // Toon de afstand met 2 decimalen
+                                    return label;
+                                },
+                                title: function(context) {
+                                    // Bepaal de oorspronkelijke (ongedraaide) graad voor de tooltip
+                                    let rotatedIndex = context[0].dataIndex;
+                                    let originalAngle = (rotatedIndex - 90 + TOTAL_DEGREES) % TOTAL_DEGREES;
+                                    return `${originalAngle}°`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Verwerkt de inkomende seriële datastring en werkt de grafiek bij.
+         * Formaat: "graden;afstand" (bv. "45.5;150.75")
+         * @param {string} rawData - De ruwe datastring van de Arduino.
+         */
+        function processAndDrawData(rawData) {
+            // Verwijder extra witruimte en newline/carriage returns (dit gebeurt nu na het bufferen)
+            const cleanData = rawData.trim(); 
+            if (cleanData === "") return;
+
+            // 1. Parsing van de data
+            const parts = cleanData.split(';');
+            
+            // Dit geeft nu alleen een fout als de complete regel geen ';' bevat
+            if (parts.length !== 2) {
+                console.error("Fout: Ontvangen data voldoet niet aan het formaat 'graden;afstand'. Ontvangen:", cleanData);
+                return;
+            }
+
+            const degrees = parseFloat(parts[0].trim());
+            const distance = parseFloat(parts[1].trim());
+
+            if (isNaN(degrees) || isNaN(distance)) {
+                console.error("Fout: Gradental of afstand is geen geldig nummer.");
+                return;
+            }
+            
+            // 2. Bepaal welke as moet worden bijgewerkt (gebruik de graad direct als index)
+            // ROTATIE: 90 graden naar links (tegen de klok in) betekent dat we 90 graden bij de index optellen.
+            let indexToUpdate = Math.round(degrees);
+            indexToUpdate = (indexToUpdate - 90) % TOTAL_DEGREES; 
+            if (indexToUpdate < 0) indexToUpdate += TOTAL_DEGREES; // Zorg ervoor dat de index positief is
+
+            // Toon de ontvangen (float) data in de statusbalk (afgerond voor leesbaarheid)
+            statusDisplay.textContent = `Update: ${Math.round(degrees)}° (Gedraaid naar ${indexToUpdate}°) | Afstand: ${distance.toFixed(2)}`;
+
+
+            // 3. Update de dataset
+            // We zorgen ervoor dat de afstand binnen de schaal blijft (0-255)
+            const safeDistance = Math.max(0, Math.min(distance, 100)); 
+            
+            radialData[indexToUpdate] = safeDistance;
+
+            // 4. Grafiek bijwerken
+            dataChart.data.datasets[0].data = radialData;
+            dataChart.update('none'); // 'none' for instant update
+        }
+
+        // === WEB SERIAL API LOGICA ===
+
+        /**
+         * Start het Web Serial verbindingsproces.
+         */
+        async function connectSerial() {
+            if (!('serial' in navigator)) {
+                // Gebruik een custom message box i.p.v. alert() in de toekomst
+                alert('Uw browser ondersteunt de Web Serial API niet. Gebruik Google Chrome of Microsoft Edge via HTTPS.');
+                return;
+            }
+            
+            try {
+                // 1. Vraag de gebruiker om een seriële poort te selecteren
+                serialPort = await navigator.serial.requestPort({
+                    filters: [
+                        // Optioneel: voeg filters toe op basis van vendorId/productId van uw Arduino
+                    ]
+                });
+
+                // 2. Open de seriële poort
+                await serialPort.open({ baudRate: 115200 }); // Stel de baudrate in
+                isConnected = true;
+                connectButton.textContent = 'Verbonden (Data Lezen...)';
+                connectButton.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
+                connectButton.classList.add('bg-red-500', 'hover:bg-red-600');
+                statusDisplay.textContent = 'Verbinding succesvol! Wachten op data...';
+                warningBox.style.display = 'none';
+
+                // 3. Start de leeslus
+                startReadLoop();
+
+            } catch (error) {
+                // Gebruiker heeft geannuleerd of er is een andere fout
+                console.error("Fout bij seriële verbinding:", error);
+                statusDisplay.textContent = 'Verbinding mislukt of geannuleerd.';
+                connectButton.textContent = 'Verbind met Arduino (Serial)';
+                connectButton.classList.remove('bg-red-500', 'hover:bg-red-600');
+                connectButton.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+            }
+        }
+
+        /**
+         * Leest continu data uit de seriële poort en gebruikt een buffer voor complete regels.
+         */
+        async function startReadLoop() {
+            const textDecoder = new TextDecoderStream();
+            const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
+            const reader = textDecoder.readable.getReader();
+            
+            try {
+                // Lees lus: leest stukjes data en buffert deze totdat een newline wordt gevonden
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+
+                    // Voeg de nieuwe data toe aan de buffer
+                    serialDataBuffer += value;
+
+                    // Verwerk alle volledige regels in de buffer
+                    let newlineIndex;
+                    // Zoek naar zowel \n (newline) als \r (carriage return) als mogelijke regeleinden
+                    while ((newlineIndex = serialDataBuffer.search(/[\r\n]/)) !== -1) {
+                        // Haal de complete regel op vóór de newline
+                        const completeLine = serialDataBuffer.substring(0, newlineIndex);
+
+                        // Verwerk de complete regel
+                        if (completeLine.length > 0) {
+                            processAndDrawData(completeLine);
+                        }
+
+                        // Verwijder de verwerkte regel (inclusief de newline/carriage return) uit de buffer
+                        serialDataBuffer = serialDataBuffer.substring(newlineIndex + 1);
+                    }
+                }
+            } catch (error) {
+                console.error('Leesfout:', error);
+                statusDisplay.textContent = 'Leesfout: verbinding verbroken.';
+            } finally {
+                reader.releaseLock();
+                // Sluit de poort nadat de lus is beëindigd
+                if (serialPort.opened) {
+                    await serialPort.close();
+                }
+                isConnected = false;
+                connectButton.textContent = 'Verbind met Arduino (Serial)';
+                connectButton.classList.remove('bg-red-500', 'hover:bg-red-600');
+                connectButton.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+                warningBox.style.display = 'block';
+            }
+        }
+
+        // === INITIALISATIE BIJ LADEN PAGINA ===
+        window.onload = function() {
+            initializeChart();
+        };
+
+    </script>
+</body>
+</html>
