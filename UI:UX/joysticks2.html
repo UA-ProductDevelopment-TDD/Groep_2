@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>
+        robotdawg
+    </title>
+    <meta name="viewport" content="user-scalable=no">
+    <!-- add a stylized mono/sci-fi font -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* HUD-inspired theme and layout */
+        body {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            font-family: 'Orbitron', 'Courier New', monospace;
+            color: #BEE7A6;
+            font-size: 14px;
+            margin: 0 auto;
+            padding: 8px 0;
+            overflow: hidden;
+            background: #07160a; /* darker army green */
+            max-width: 1200px;
+            height: 100vh;
+        }
+
+        h1 {
+            color: #B7E2A1;
+            margin: 4px 0 6px 0;
+            font-size: 1.1rem;
+            letter-spacing: 2px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        /* Livestream container */
+        #livestream {
+            height: min(50vh, 460px);
+            margin: 8px 12px;
+            width: calc(100% - 48px);
+            background: #000;
+            border: 4px solid rgba(90,130,55,0.9);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* MJPEG image styled as night-vision + scanline overlay */
+        #livestream img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transform: translateZ(0);
+            /* night vision green tint */
+            filter: grayscale(1) contrast(1.25) brightness(1.05) sepia(.25) hue-rotate(70deg) saturate(4);
+            mix-blend-mode: screen;
+        }
+
+        /* moving faint scanlines */
+        #livestream::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: linear-gradient(rgba(0,0,0,0.06) 50%, rgba(0,0,0,0) 50%);
+            background-size: 100% 3px;
+            animation: scan 6s linear infinite;
+            opacity: 0.6;
+        }
+        @keyframes scan {
+            0% { background-position-y: 0; }
+            100% { background-position-y: 100%; }
+        }
+
+        /* Crosshair */
+        .hud-crosshair {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 60%;
+            height: 60%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+        .hud-crosshair .line {
+            position: absolute;
+            background: rgba(180,255,170,0.85);
+        }
+        .hud-crosshair .horiz {
+            height: 2px;
+            left: 10%;
+            right: 10%;
+            top: 50%;
+            transform: translateY(-50%);
+            box-shadow: 0 0 8px rgba(180,255,170,0.45);
+        }
+        .hud-crosshair .vert {
+            width: 2px;
+            top: 10%;
+            bottom: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 8px rgba(180,255,170,0.45);
+        }
+        .hud-crosshair .ticks {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 120px;
+            height: 120px;
+            transform: translate(-50%, -50%);
+            border: 1px dashed rgba(180,255,170,0.12);
+            border-radius: 50%;
+            box-shadow: 0 0 20px rgba(120,200,100,0.06) inset;
+        }
+        .hud-crosshair .center-dot {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 8px;
+            height: 8px;
+            background: rgba(200,255,180,1);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(200,255,180,0.9);
+        }
+
+        /* Fallback label when stream fails */
+        #livestream .livestream-inner {
+            color: #cfe0a8;
+            font-weight: 700;
+            letter-spacing: 2px;
+            border: 2px dashed rgba(120,180,70,0.6);
+            padding: 8px 14px;
+            border-radius: 6px;
+            background: rgba(0,0,0,0.45);
+            display: none; /* shown only on img error */
+            z-index: 10;
+        }
+
+        /* HUD panels and info */
+        .info-panel {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            text-align: left;
+            margin: 8px 12px;
+            color: #bfe8a6;
+            flex-wrap: nowrap;
+            font-size: 0.95rem;
+            width: calc(100% - 48px);
+        }
+        .info-panel p {
+            background: linear-gradient(180deg, rgba(10,20,8,0.45), rgba(5,10,6,0.25));
+            border: 1px solid rgba(120,170,60,0.15);
+            padding: 8px 12px;
+            border-radius: 6px;
+            min-width: 160px;
+            box-shadow: 0 2px 0 rgba(0,0,0,0.5);
+        }
+
+        /* Canvas styling to blend with HUD */
+        canvas {
+            display: block;
+            width: calc(100% - 40px);
+            margin: 10px 20px;
+            height: min(30vh, 300px);
+            background: linear-gradient(180deg, rgba(10,18,8,0.85), rgba(20,36,18,0.95));
+            border-radius: 6px;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45);
+            border: 1px solid rgba(80,120,50,0.2);
+        }
+
+        /* Fire button overlay between joysticks */
+        .canvas-wrap {
+            position: relative;
+            width: calc(100% - 40px);
+            margin: 10px 20px;
+        }
+        #fire-button {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 76px;
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #ffb0b0, #d72626);
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: 0 8px 22px rgba(215,38,38,0.35), 0 0 30px rgba(255,80,80,0.12);
+        }
+        #fire-button:active { transform: translate(-50%, -50%) scale(0.96); }
+        #fire-button.disabled,
+        #fire-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .fire-pulse {
+            animation: fire-pulse 520ms ease;
+        }
+        @keyframes fire-pulse {
+            0% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 8px 22px rgba(215,38,38,0.35); }
+            40% { transform: translate(-50%, -50%) scale(1.12); box-shadow: 0 12px 38px rgba(255,80,80,0.6); }
+            100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 8px 22px rgba(215,38,38,0.35); }
+        }
+
+        /* center slider + probability bar */
+        .center-control {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:8px;
+            min-width:220px;
+        }
+        .center-control input[type="range"] {
+            width:220px;
+            -webkit-appearance: none;
+            height:6px;
+            background: rgba(255,255,255,0.06);
+            border-radius:6px;
+        }
+        .probability {
+            width:220px;
+            height:12px;
+            background: rgba(0,0,0,0.12);
+            border-radius:8px;
+            overflow:hidden;
+            border:1px solid rgba(0,0,0,0.08);
+        }
+        .probability-fill {
+            height:100%;
+            width:50%;
+            background: linear-gradient(90deg,#66ff66,#1db71d);
+            transition: width 120ms linear;
+        }
+        .probability-fill.low { background: linear-gradient(90deg,#ff6666,#cc2222); }
+        .probability-fill.medium { background: linear-gradient(90deg,#ffb86b,#ff8c3a); }
+        .probability-fill.high { background: linear-gradient(90deg,#66ff66,#1db71d); }
+        .probability-text {
+            color:#BFE8A6;
+            font-size:0.9rem;
+        }
+
+        /* small responsive tweaks */
+        @media (max-width: 720px) {
+            #livestream { height: 40vh; }
+            .info-panel { flex-direction: column; gap: 6px; align-items: stretch; }
+            .info-panel p { width: 100%; }
+            .hud-crosshair { width: 80%; height: 80%; }
+        }
+    </style>
+</head>
+<body>
+     <h1 style="text-align:center">
+         ROBOTDAWG </h1>
+    
+    <!-- Livestream area (MJPEG) with HUD overlays -->
+    <div id="livestream" role="region" aria-label="Livestream placeholder">
+        <img id="livestream-stream"
+             src="http://158.58.130.148/mjpg/video.mjpg"
+             alt="LIVE STREAM"
+             onerror="this.style.display='none'; this.parentNode.querySelector('.livestream-inner').style.display='flex'">
+        <div class="livestream-inner">LIVE STREAM</div>
+
+        <!-- HUD crosshair overlay -->
+        <div class="hud-crosshair" aria-hidden="true">
+            <div class="line horiz"></div>
+            <div class="line vert"></div>
+            <div class="ticks"></div>
+            <div class="center-dot"></div>
+        </div>
+    </div>
+
+    <!-- HUD / telemetry info (kept above the control canvas) -->
+    <div class="info-panel">
+        <p>
+            Joystick 1 (Links)<br>
+            X: <span id="x_coordinate1"> 0 </span>
+            Y: <span id="y_coordinate1"> 0 </span><br>
+            Speed: <span id="speed1"> 0 </span> %<br>
+            Angle: <span id="angle1"> 0 </span>
+        </p>
+        <div class="center-control" aria-hidden="false">
+            <label for="placeholder-slider" style="font-weight:700;color:#dfeeca">Probability</label>
+            <input id="placeholder-slider" type="range" min="0" max="100" value="50" />
+            <div class="probability" aria-label="probability">
+                <div id="prob-fill" class="probability-fill"></div>
+            </div>
+            <div id="prob-text" class="probability-text">50%</div>
+        </div>
+        <p>
+            Joystick 2 (Rechts)<br>
+            X: <span id="x_coordinate2"> 0 </span>
+            Y: <span id="y_coordinate2"> 0 </span><br>
+            Speed: <span id="speed2"> 0 </span> %<br>
+            Angle: <span id="angle2"> 0 </span>
+        </p>
+    </div>
+ 
+    <!-- canvas wrapped so fire button can be positioned above it -->
+    <div class="canvas-wrap">
+        <canvas id="canvas" name="game"></canvas>
+        <button id="fire-button" aria-label="Fire" title="Fire">FIRE</button>
+    </div>
+ 
+     <script>
+        // filepath: /Users/DavideJB/Documents/technology/joysticks2.html
+        var canvas, ctx;
+        var fireBtn;
+        // slider/probability hookup (replaced)
+        function setupPlaceholderSlider() {
+            var slider = document.getElementById('placeholder-slider');
+            var fill = document.getElementById('prob-fill');
+            var text = document.getElementById('prob-text');
+            if (!slider || !fill || !text) return;
+
+            function update() {
+                var v = parseInt(slider.value, 10);
+                fill.style.width = v + '%';
+                text.innerText = v + '%';
+
+                // state rules:
+                // <55% -> red, fire disabled
+                // 55-79 -> orange, fire enabled but requires confirmation
+                // >=80 -> green, fire enabled without confirmation
+                fill.className = 'probability-fill'; // reset
+                if (v < 55) {
+                    fill.classList.add('low');
+                    if (fireBtn) {
+                        fireBtn.disabled = true;
+                        fireBtn.classList.add('disabled');
+                        fireBtn.title = 'Blocked: probability too low';
+                        delete fireBtn.dataset.confirm;
+                    }
+                } else if (v < 80) {
+                    fill.classList.add('medium');
+                    if (fireBtn) {
+                        fireBtn.disabled = false;
+                        fireBtn.classList.remove('disabled');
+                        fireBtn.dataset.confirm = 'true';
+                        fireBtn.title = 'Fire requires confirmation';
+                    }
+                } else {
+                    fill.classList.add('high');
+                    if (fireBtn) {
+                        fireBtn.disabled = false;
+                        fireBtn.classList.remove('disabled');
+                        delete fireBtn.dataset.confirm;
+                        fireBtn.title = 'Fire';
+                    }
+                }
+            }
+            slider.addEventListener('input', update);
+            update();
+        }
+
+        // Visual fire action: pulse button and draw brief flash on canvas (updated)
+        function fireAction(e) {
+            e && e.preventDefault && e.preventDefault();
+            if (!fireBtn) return;
+            // respect disabled state
+            if (fireBtn.disabled) return;
+
+            // if confirmation required, ask user
+            if (fireBtn.dataset && fireBtn.dataset.confirm === 'true') {
+                var ok = confirm('Probability moderate — are you sure you want to fire?');
+                if (!ok) return;
+            }
+
+            fireBtn.classList.remove('fire-pulse');
+            void fireBtn.offsetWidth; // restart animation
+            fireBtn.classList.add('fire-pulse');
+
+            // draw flash using canvas coordinates (midpoint between joysticks)
+            var cx = (joystick1_x_orig + joystick2_x_orig) / 2;
+            var cy = joystick1_y_orig;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,80,80,0.18)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * 0.95, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            setTimeout(drawAll, 180);
+            console.log('FIRE!');
+        }
+
+        // Variabelen voor de algemene canvas afmetingen en joystick grootte
+         var width, height, radius;
+        
+        // Variabelen voor Joystick 1
+        var joystick1_x_orig, joystick1_y_orig; // Oorspronkelijke (center) positie van de achtergrondcirkel
+        var joystick1_x_pos, joystick1_y_pos;   // Huidige positie van de beweegbare joystick
+        let joystick1_paint = false; // Status: wordt deze joystick momenteel getekend/gebruikt?
+        let joystick1_coord = { x: 0, y: 0 }; // Huidige aanraak-/muiscoördinaten
+
+        // Variabelen voor Joystick 2
+        var joystick2_x_orig, joystick2_y_orig;
+        var joystick2_x_pos, joystick2_y_pos;
+        let joystick2_paint = false;
+        let joystick2_coord = { x: 0, y: 0 };
+
+
+        window.addEventListener('load', () => {
+
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            fireBtn = document.getElementById('fire-button');
+            resize();
+
+            setupPlaceholderSlider();
+
+            // Event listeners voor muis en touch — bind to canvas so UI controls (slider) work
+            canvas.addEventListener('mousedown', startDrawing);
+            window.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mousemove', Draw);
+
+            // touch events on canvas only; allow preventDefault for canvas touch behavior
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            window.addEventListener('touchend', stopDrawing);
+            window.addEventListener('touchcancel', stopDrawing);
+            canvas.addEventListener('touchmove', Draw, { passive: false });
+
+            window.addEventListener('resize', resize);
+
+            // Fire button handlers (mouse + touch)
+            if (fireBtn) {
+                fireBtn.addEventListener('mousedown', fireAction);
+                fireBtn.addEventListener('touchstart', function(e){ e.preventDefault(); fireAction(e); }, {passive:false});
+            }
+        });
+
+        // Hulpfunctie om de coördinaten van de muis/touch te krijgen
+        function getPosition(event) {
+            let rect = canvas.getBoundingClientRect();
+            let x, y;
+
+            if (event.touches && event.touches.length > 0) {
+                // Gebruik de eerste touch-coördinaat als standaard
+                x = event.touches[0].clientX - rect.left;
+                y = event.touches[0].clientY - rect.top;
+            } else {
+                x = event.clientX - rect.left;
+                y = event.clientY - rect.top;
+            }
+            return { x: x, y: y };
+        }
+
+        // Bepaalt of een punt binnen de achtergrondcirkel van een joystick valt
+        function is_it_in_the_circle(x, y, x_orig, y_orig) {
+            var current_radius = Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2));
+            return radius + 20 >= current_radius; // +20 is de marge van de achtergrond
+        }
+
+        // Functie om de afmetingen en posities opnieuw in te stellen
+        function resize() {
+            // Set canvas size based on its CSS-rendered size so it sits under the livestream
+            width = canvas.clientWidth;
+            height = canvas.clientHeight;
+            // radius limited by canvas height and width to keep buttons large but inside the control area
+            radius = Math.min(width / 6, height / 3, 100);
+
+            ctx.canvas.width = Math.floor(width);
+            ctx.canvas.height = Math.floor(height);
+            
+            // Posities voor twee joysticks (links en rechts), lager in the control canvas
+            joystick1_x_orig = width / 4;
+            joystick1_y_orig = height * 0.70;
+            
+            joystick2_x_orig = width * 3 / 4;
+            joystick2_y_orig = height * 0.70;
+
+            // position fire button midway between joysticks
+            updateFireButtonPosition();
+
+            // Standaard joystick positie is in het midden van de achtergrond
+            joystick1_x_pos = joystick1_x_orig;
+            joystick1_y_pos = joystick1_y_orig;
+            joystick2_x_pos = joystick2_x_orig;
+            joystick2_y_pos = joystick2_y_orig;
+
+            drawAll(); // Teken alles opnieuw na resizing
+        }
+
+        // place fire button at midpoint between the two joystick centers (canvas coords)
+        function updateFireButtonPosition() {
+            if (!fireBtn || !canvas) return;
+            var midX = (joystick1_x_orig + joystick2_x_orig) / 2;
+            var midY = joystick1_y_orig;
+
+            // compute canvas offset inside its parent (.canvas-wrap)
+            var canvasRect = canvas.getBoundingClientRect();
+            var wrapRect = canvas.parentNode.getBoundingClientRect();
+            var offsetLeft = canvasRect.left - wrapRect.left;
+            var offsetTop = canvasRect.top - wrapRect.top;
+
+            // set button center using canvas-relative midpoint plus canvas offset
+            fireBtn.style.left = (offsetLeft + midX) + 'px';
+            fireBtn.style.top  = (offsetTop  + midY) + 'px';
+        }
+
+        // Visual fire action: pulse button and draw brief flash on canvas
+        function fireAction(e) {
+            e && e.preventDefault && e.preventDefault();
+            if (!fireBtn) return;
+            // respect disabled state
+            if (fireBtn.disabled) return;
+
+            // if confirmation required, ask user
+            if (fireBtn.dataset && fireBtn.dataset.confirm === 'true') {
+                var ok = confirm('Probability moderate — are you sure you want to fire?');
+                if (!ok) return;
+            }
+
+            fireBtn.classList.remove('fire-pulse');
+            void fireBtn.offsetWidth; // restart animation
+            fireBtn.classList.add('fire-pulse');
+
+            // draw flash using canvas coordinates (midpoint between joysticks)
+            var cx = (joystick1_x_orig + joystick2_x_orig) / 2;
+            var cy = joystick1_y_orig;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,80,80,0.18)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * 0.95, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            setTimeout(drawAll, 180);
+            console.log('FIRE!');
+        }
+
+        // Teken de achtergrond van één joystick
+        function background(x_orig, y_orig) {
+            ctx.beginPath();
+            ctx.arc(x_orig, y_orig, radius + 20, 0, Math.PI * 2, true);
+            ctx.fillStyle = '#cfd9b8';
+            ctx.fill();
+        }
+
+        // Teken de beweegbare knop van één joystick
+        function joystick(x, y, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = '#394b1f';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+        }
+
+        // Teken beide joysticks en hun achtergronden
+        function drawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Teken Joystick 1
+            background(joystick1_x_orig, joystick1_y_orig);
+            joystick(joystick1_x_pos, joystick1_y_pos, '#C2B280'); // Khaki
+            
+            // Teken Joystick 2
+            background(joystick2_x_orig, joystick2_y_orig);
+            joystick(joystick2_x_pos, joystick2_y_pos, '#556B2F'); // Olive
+        }
+
+
+        // Start de tekening (muis omlaag / touch start)
+        function startDrawing(event) {
+            event.preventDefault(); // Voorkomt standaard browseracties (zoals scrollen op touch)
+            
+            let coords;
+            // Als het een touch event is, doorloop alle touches
+            if (event.touches && event.touches.length > 0) {
+                for (let i = 0; i < event.touches.length; i++) {
+                    coords = getPosition(event.touches[i]);
+                    // Controleer of de aanraking binnen Joystick 1 valt EN deze nog niet actief is
+                    if (!joystick1_paint && is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                        joystick1_paint = true;
+                        joystick1_coord = coords;
+                        Draw(event.touches[i], 1);
+                        return; // Behandel slechts één joystick per aanraking start
+                    } 
+                    // Controleer of de aanraking binnen Joystick 2 valt EN deze nog niet actief is
+                    else if (!joystick2_paint && is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                        joystick2_paint = true;
+                        joystick2_coord = coords;
+                        Draw(event.touches[i], 2);
+                        return; // Behandel slechts één joystick per aanraking start
+                    }
+                }
+            } 
+            // Als het een muis event is (single-touch/click)
+            else {
+                coords = getPosition(event);
+                if (is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                    joystick1_paint = true;
+                    joystick1_coord = coords;
+                    Draw(event, 1);
+                } else if (is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                    joystick2_paint = true;
+                    joystick2_coord = coords;
+                    Draw(event, 2);
+                }
+            }
+        }
+
+
+        // Stop de tekening (muis omhoog / touch einde)
+        function stopDrawing(event) {
+            event.preventDefault();
+            
+            // Bepaal welke joystick is losgelaten (dit is complexer met touches, dus we resetten ze beide)
+            // Voor touch events moet je kijken naar event.changedTouches om te zien welke touch stopte.
+            // Voor eenvoud, en omdat we geen touch ID's bijhouden, resetten we beide indien nodig
+            let shouldRedraw = false;
+            
+            if (joystick1_paint) {
+                joystick1_paint = false;
+                joystick1_x_pos = joystick1_x_orig;
+                joystick1_y_pos = joystick1_y_orig;
+                document.getElementById("x_coordinate1").innerText = 0;
+                document.getElementById("y_coordinate1").innerText = 0;
+                document.getElementById("speed1").innerText = 0;
+                document.getElementById("angle1").innerText = 0;
+                shouldRedraw = true;
+            }
+
+            if (joystick2_paint) {
+                joystick2_paint = false;
+                joystick2_x_pos = joystick2_x_orig;
+                joystick2_y_pos = joystick2_y_orig;
+                document.getElementById("x_coordinate2").innerText = 0;
+                document.getElementById("y_coordinate2").innerText = 0;
+                document.getElementById("speed2").innerText = 0;
+                document.getElementById("angle2").innerText = 0;
+                shouldRedraw = true;
+            }
+            
+            if (shouldRedraw) {
+                drawAll();
+            }
+        }
+
+        // Teken/update de joysticks
+        function Draw(event, specific_joystick_id = 0) {
+            event.preventDefault();
+
+            // Als het een muis event is, kijk of een van de joysticks actief is
+            if (!event.touches && (joystick1_paint || joystick2_paint)) {
+                let coords = getPosition(event);
+                if (joystick1_paint) {
+                    joystick1_coord = coords;
+                    updateJoystick(1);
+                } else if (joystick2_paint) {
+                    joystick2_coord = coords;
+                    updateJoystick(2);
+                }
+            } 
+            // Als het een touch event is, doorloop alle actieve touches
+            else if (event.touches && event.touches.length > 0) {
+                drawAll(); // Wis en teken alles opnieuw voor de soepelste update
+                
+                for (let i = 0; i < event.touches.length; i++) {
+                    let coords = getPosition(event.touches[i]);
+                    let touch_id = event.touches[i].identifier;
+
+                    // Dit is een vereenvoudigde aanpak omdat we geen touch ID's koppelen. 
+                    // We gaan er nu van uit dat als een joystick actief is (paint=true),
+                    // de dichtstbijzijnde touch die joystick bestuurt.
+                    
+                    if (joystick1_paint) {
+                        joystick1_coord = coords;
+                        updateJoystick(1);
+                    }
+                    if (joystick2_paint) {
+                        joystick2_coord = coords;
+                        updateJoystick(2);
+                    }
+                }
+            }
+            
+            // Als het een startDrawing event was, en we weten welke joystick (1 of 2)
+            else if (specific_joystick_id === 1 && joystick1_paint) {
+                 updateJoystick(1);
+            } else if (specific_joystick_id === 2 && joystick2_paint) {
+                 updateJoystick(2);
+            }
+            
+            // Teken alles opnieuw, alleen als er een update is geweest
+            if (joystick1_paint || joystick2_paint) {
+                drawAll();
+            }
+        } 
+
+
+        // Logica om een specifieke joystick bij te werken (1 of 2)
+        function updateJoystick(id) {
+            let x_orig, y_orig, coord, x_pos_ref, y_pos_ref;
+            let x_coord_id, y_coord_id, speed_id, angle_id;
+            let color;
+            
+            // Wijs de juiste variabelen toe op basis van de ID
+            if (id === 1) {
+                x_orig = joystick1_x_orig;
+                y_orig = joystick1_y_orig;
+                coord = joystick1_coord;
+                x_pos_ref = 'joystick1_x_pos';
+                y_pos_ref = 'joystick1_y_pos';
+                x_coord_id = "x_coordinate1";
+                y_coord_id = "y_coordinate1";
+                speed_id = "speed1";
+                angle_id = "angle1";
+                color = '#F08080';
+            } else if (id === 2) {
+                x_orig = joystick2_x_orig;
+                y_orig = joystick2_y_orig;
+                coord = joystick2_coord;
+                x_pos_ref = 'joystick2_x_pos';
+                y_pos_ref = 'joystick2_y_pos';
+                x_coord_id = "x_coordinate2";
+                y_coord_id = "y_coordinate2";
+                speed_id = "speed2";
+                angle_id = "angle2";
+                color = '#8080F0';
+            } else {
+                return; // Onbekende ID
+            }
+
+
+            var angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
+            var current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
+
+            // Bereken de positie van de beweegbare knop
+            let x, y;
+            if (radius >= current_radius) {
+                x = coord.x;
+                y = coord.y;
+            } else {
+                x = radius * Math.cos(angle) + x_orig;
+                y = radius * Math.sin(angle) + y_orig;
+            }
+
+            // Update de globale positie variabelen
+            if (id === 1) {
+                joystick1_x_pos = x;
+                joystick1_y_pos = y;
+            } else {
+                joystick2_x_pos = x;
+                joystick2_y_pos = y;
+            }
+
+
+            // Bereken de weer te geven waarden
+            let angle_in_degrees;
+            if (Math.sign(angle) == -1) {
+                angle_in_degrees = Math.round(-angle * 180 / Math.PI);
+            } else {
+                angle_in_degrees = Math.round(360 - angle * 180 / Math.PI);
+            }
+
+            var speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
+
+            var x_relative = Math.round(x - x_orig);
+            var y_relative = Math.round(y - y_orig);
+            
+            // Update de display elementen
+            document.getElementById(x_coord_id).innerText = x_relative;
+            document.getElementById(y_coord_id).innerText = y_relative;
+            document.getElementById(speed_id).innerText = speed;
+            document.getElementById(angle_id).innerText = angle_in_degrees;
+        } 
+    </script>
+ </body>
+ </html>
