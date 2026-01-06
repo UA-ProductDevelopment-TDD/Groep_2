@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Grove Vision AI - Simpele Stream</title>
+    <style>
+        body { background: #222; color: white; font-family: sans-serif; text-align: center; }
+        canvas { background: #000; max-width: 100%; border: 2px solid #8dc215; border-radius: 8px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #8dc215; border: none; color: white; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>Grove Vision AI Stream</h2>
+    <button id="startBtn">Start Video</button>
+    <p id="status">Status: Stand-by</p>
+    
+    <canvas id="preview"></canvas>
+
+    <script>
+        const baseHost = "http://192.168.1.xxx"; // VERVANG DIT DOOR HET IP VAN JE CAMERA
+        const streamUrl = `${baseHost}:8080/stream/result`;
+        
+        const startBtn = document.getElementById('startBtn');
+        const statusText = document.getElementById('status');
+        const canvas = document.getElementById('preview');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+
+        startBtn.onclick = async () => {
+            statusText.innerText = "Status: Verbinden...";
+            
+            try {
+                // STAP 1: Stuur het 'START' commando (INVOKE)
+                const cmd = btoa("INVOKE=-1,0,0"); 
+                await fetch(`${baseHost}/command?base64=${cmd}`);
+                
+                // STAP 2: Open de stream
+                const response = await fetch(streamUrl);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                statusText.innerText = "Status: Stream actief";
+
+                // STAP 3: Lees de binnenkomende data
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value);
+                    const parts = buffer.split('\r\n');
+                    
+                    // Laatste deel terug in buffer (kan onvolledig zijn)
+                    buffer = parts.pop(); 
+
+                    for (const part of parts) {
+                        if (part.trim() === "") continue;
+                        try {
+                            const json = JSON.parse(part);
+                            if (json.data && json.data.image) {
+                                // Teken het beeld op het canvas
+                                img.onload = () => {
+                                    canvas.width = img.width;
+                                    canvas.height = img.height;
+                                    ctx.drawImage(img, 0, 0);
+                                };
+                                img.src = `data:image/jpeg;base64,${json.data.image}`;
+                            }
+                        } catch (e) {
+                            console.error("JSON Error", e);
+                        }
+                    }
+                }
+            } catch (err) {
+                statusText.innerText = "Status: Fout bij verbinden";
+                console.error(err);
+            }
+        };
+    </script>
+</body>
+</html>
