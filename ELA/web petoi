@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Bittle Bluetooth besturing</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    button {
+      font-size: 1.1rem;
+      padding: 8px 16px;
+      margin: 6px 4px;
+      display: inline-block;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    #joystick {
+      width: 200px;
+      height: 200px;
+      border: 2px solid #333;
+      border-radius: 10px;
+      position: relative;
+      margin-top: 20px;
+      touch-action: none;
+      user-select: none;
+    }
+    #joystickCenter {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      margin-top: -5px;
+      background: #333;
+      border-radius: 50%;
+    }
+    #joystickInfo {
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Bittle besturen via Bluetooth</h1>
+
+  <p>
+    Gebruik Chrome/Edge op desktop, met Bluetooth aan. Klik eerst op "Verbind met Bittle".
+  </p>
+
+  <!-- Verbinden -->
+  <button onclick="connectBittle()">Verbind met Bittle</button>
+
+  <!-- Basis acties -->
+  <div style="margin-top: 10px;">
+    <button onclick="bittleWalk()">Lopen</button>
+    <button onclick="bittleStop()">Stop</button>
+    <button onclick="bittleBow()">Bukken</button>
+  </div>
+
+  <!-- Joystick -->
+  <h3>Joystick</h3>
+  <p>Sleep in het vierkant: boven = vooruit, beneden = achteruit, links/rechts = draaien.</p>
+  <div id="joystick">
+    <div id="joystickCenter"></div>
+  </div>
+  <div id="joystickInfo">Joystick: neutraal</div>
+
+  <div id="status">Status: nog niet verbonden</div>
+
+  <script>
+    let bittleDevice = null;
+    let bittleServer = null;
+    let uartService = null;
+    let txCharacteristic = null;
+
+    // Nordic UART UUIDs (BLE) – dit klopt met jouw module
+    const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const UART_TX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+    // HIER vul je de echte seriële commando-strings van jouw Bittle-firmware in:
+    // - WALK_CMD   : lopen/vooruit
+    // - STOP_CMD   : stoppen
+    // - BOW_CMD    : bukken
+    // - BACK_CMD   : achteruit
+    // - LEFT_CMD   : links draaien
+    // - RIGHT_CMD  : rechts draaien
+    //
+    // Voorbeeld: als in je Bittle-code 'walk' en 'stop' staan, maak er dan 'walk\n', 'stop\n' van.
+    const WALK_CMD  = 'kwkF\n';  // nu werkend bij jou
+    const STOP_CMD  = 'stop\n';  // PAS DIT AAN -> exacte stop-string uit je Bittle-code + '\n'
+    const BOW_CMD   = 'bow\n';   // PAS DIT AAN -> exacte bow/buk-string uit je Bittle-code + '\n'
+    const BACK_CMD  = 'kwkB\n';  // PAS DIT AAN indien nodig
+    const LEFT_CMD  = 'kwkL\n';  // PAS DIT AAN indien nodig
+    const RIGHT_CMD = 'kwkR\n';  // PAS DIT AAN indien nodig
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = 'Status: ' + msg;
+      console.log(msg);
+    }
+
+    async function connectBittle() {
+      try {
+        if (!navigator.bluetooth) {
+          setStatus('Web Bluetooth niet beschikbaar in deze browser.');
+          return;
+        }
+
+        setStatus('Apparaat kiezen...');
+        bittleDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [UART_SERVICE_UUID]
+        });
+
+        setStatus('Verbinden met GATT-server...');
+        bittleServer = await bittleDevice.gatt.connect();
+
+        setStatus('UART-service opvragen...');
+        uartService = await bittleServer.getPrimaryService(UART_SERVICE_UUID);
+
+        setStatus('TX-characteristic opvragen...');
+        txCharacteristic = await uartService.getCharacteristic(UART_TX_CHAR_UUID);
+
+        setStatus('Verbonden met: ' + (bittleDevice.name || 'onbekend apparaat'));
+      } catch (e) {
+        console.error(e);
+        setStatus('Fout: ' + e);
+      }
+    }
+
+    async function sendCommand(cmd) {
+      try {
+        if (!txCharacteristic) {
+          setStatus('Niet verbonden. Verbind eerst met Bittle.');
+          return;
+        }
+        const encoder = new TextEncoder();
+        await txCharacteristic.writeValue(encoder.encode(cmd));
+        setStatus('Commando verstuurd: ' + cmd.trim());
+      } catch (e) {
+        console.error(e);
+        setStatus('Fout bij versturen: ' + e);
+      }
+    }
+
+    // Basis knoppen
+    async function bittleWalk() {
+      await sendCommand(WALK_CMD);
+    }
+
+    async function bittleStop() {
+      await sendCommand(STOP_CMD);
+    }
+
+    async function bittleBow() {
+      await sendCommand(BOW_CMD);
+    }
+
+    // Joystick-logica
+    const joystick = document.getElementById('joystick');
+    const joystickInfo = document.getElementById('joystickInfo');
+    let isDragging = false;
+
+    function handleJoystickEvent(clientX, clientY) {
+      const rect = joystick.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      const dx = x - rect.width / 2;
+      const dy = y - rect.height / 2;
+
+      const deadZone = 20; // px rond het midden
+      let dir = 'neutraal';
+
+      if (Math.abs(dx) < deadZone && Math.abs(dy) < deadZone) {
+        dir = 'neutraal';
+      } else if (Math.abs(dy) > Math.abs(dx)) {
+        if (dy < 0) dir = 'vooruit';
+        else dir = 'achteruit';
+      } else {
+        if (dx < 0) dir = 'links';
+        else dir = 'rechts';
+      }
+
+      joystickInfo.textContent = 'Joystick: ' + dir;
+
+      switch (dir) {
+        case 'vooruit':
+          sendCommand(WALK_CMD);
+          break;
+        case 'achteruit':
+          sendCommand(BACK_CMD);
+          break;
+        case 'links':
+          sendCommand(LEFT_CMD);
+          break;
+        case 'rechts':
+          sendCommand(RIGHT_CMD);
+          break;
+        case 'neutraal':
+          sendCommand(STOP_CMD);
+          break;
+      }
+    }
+
+    joystick.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      handleJoystickEvent(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        handleJoystickEvent(e.clientX, e.clientY);
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+      }
+      joystickInfo.textContent = 'Joystick: neutraal';
+      sendCommand(STOP_CMD);
+    });
+
+    // Touch-ondersteuning
+    joystick.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      isDragging = true;
+      const t = e.touches[0];
+      handleJoystickEvent(t.clientX, t.clientY);
+    }, { passive: false });
+
+    joystick.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (isDragging) {
+        const t = e.touches[0];
+        handleJoystickEvent(t.clientX, t.clientY);
+      }
+    }, { passive: false });
+
+    joystick.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (isDragging) {
+        isDragging = false;
+      }
+      joystickInfo.textContent = 'Joystick: neutraal';
+      sendCommand(STOP_CMD);
+    }, { passive: false });
+  </script>
+</body>
+</html>
