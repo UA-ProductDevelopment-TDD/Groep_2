@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Serial Bluetooth Connector</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; }
+        #status { margin-top: 20px; font-weight: bold; }
+        .action-buttons button { width: 150px; }
+    </style>
+</head>
+<body>
+
+    <h1>Bluetooth Seriële Communicatie</h1>
+    
+    <button id="connectButton">Verbind met Bluetooth Seriële Poort</button>
+    
+    <div class="action-buttons">
+        <button id="startSendButton" data-command="kvtR" disabled>Start ('kvtR')</button>
+        <button id="stopSendButton" data-command="STOP" disabled>Stop ('STOP')</button>
+    </div>
+
+    <div id="status">Status: Niet verbonden.</div>
+
+    <script>
+        let port;
+        const connectButton = document.getElementById('connectButton');
+        const startSendButton = document.getElementById('startSendButton');
+        const stopSendButton = document.getElementById('stopSendButton');
+        const statusDiv = document.getElementById('status');
+        
+        const BAUD_RATE = 9600; // Pas dit aan aan de baudrate van je apparaat
+
+        /**
+         * Probeert verbinding te maken met een seriële poort.
+         */
+        async function connectSerial() {
+            if (!('serial' in navigator)) {
+                statusDiv.textContent = 'Status: Je browser ondersteunt de Web Serial API niet. Gebruik Chrome of Edge (HTTPS vereist).';
+                console.warn('Web Serial API niet ondersteund.');
+                return;
+            }
+            
+            try {
+                // Vraag de gebruiker om een poort te selecteren
+                port = await navigator.serial.requestPort();
+
+                // Open de poort
+                await port.open({ baudRate: BAUD_RATE });
+                
+                statusDiv.textContent = `Status: Verbonden! Baudrate: ${BAUD_RATE}`;
+                connectButton.disabled = true;
+                startSendButton.disabled = false;
+                stopSendButton.disabled = false;
+
+            } catch (error) {
+                statusDiv.textContent = `Status: Fout bij verbinding: ${error.message}`;
+                console.error('Fout bij verbinden:', error);
+            }
+        }
+
+        /**
+         * Stuurt de gespecificeerde string naar de seriële poort.
+         * @param {string} command - De string die verzonden moet worden.
+         */
+        async function sendData(command) {
+            if (port && port.writable) {
+                try {
+                    const writer = port.writable.getWriter();
+                    
+                    // Converteer de string naar een Uint8Array en voeg een newline toe
+                    const data = new TextEncoder().encode(command + '\n'); 
+                    
+                    await writer.write(data);
+                    
+                    writer.releaseLock();
+                    
+                    statusDiv.textContent = `Status: Commando '${command}' succesvol verzonden.`;
+
+                } catch (error) {
+                    statusDiv.textContent = `Status: Fout bij verzenden: ${error.message}`;
+                    console.error('Fout bij verzenden van data:', error);
+                    // Probeer de poort te sluiten in geval van een fout
+                    if (port) { await port.close(); }
+                    connectButton.disabled = false;
+                    startSendButton.disabled = true;
+                    stopSendButton.disabled = true;
+                    statusDiv.textContent = 'Status: Verbinding verbroken door fout.';
+                }
+            } else {
+                statusDiv.textContent = 'Status: Niet verbonden.';
+            }
+        }
+
+        // Event listeners toevoegen
+        connectButton.addEventListener('click', connectSerial);
+
+        // Event listener voor de 'Start' knop
+        startSendButton.addEventListener('click', () => {
+            const command = startSendButton.getAttribute('data-command');
+            sendData(command);
+        });
+
+        // Event listener voor de 'Stop' knop
+        stopSendButton.addEventListener('click', () => {
+            const command = stopSendButton.getAttribute('data-command');
+            sendData(command);
+        });
+
+    </script>
+</body>
+</html>
