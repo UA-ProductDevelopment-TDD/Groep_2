@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Grove Vision AI - 192.168.137.13</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #000;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: #1a1a1a;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="preview"></canvas>
+
+    <script>
+        // AANPASSING: Vast IP-adres van je Arduino
+        const DEVICE_IP = "192.168.137.13";
+        const baseHost = `http://${DEVICE_IP}`;
+        const streamUrl = `http://${DEVICE_IP}:8080/stream`;
+
+        const streamPreview = document.getElementById('preview');
+        const streamPreviewCtx = streamPreview.getContext('2d');
+        const streamPreviewFrame = new Image();
+        let streamPreviewController = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("Verbinding maken met " + baseHost);
+            autoStart();
+        });
+
+        async function autoStart() {
+            try {
+                // 1. Forceer resolutie naar 480x480
+                const sensorCmd = btoa("SENSOR=1,1,1");
+                await fetch(`${baseHost}/command?base64=${sensorCmd}`, { mode: 'cors' });
+
+                // 2. Start de AI-verwerking
+                const invokeCmd = btoa("INVOKE=-1,0,0");
+                const response = await fetch(`${baseHost}/command?base64=${invokeCmd}`, { mode: 'cors' });
+                const data = await response.json();
+
+                if (data.code === 0) {
+                    // 3. Start de stream
+                    streamPreviewController = new AbortController();
+                    startStreamReader(`${streamUrl}/result`, streamPreviewController.signal);
+                }
+            } catch (err) {
+                console.error("Kan niet verbinden met de Arduino op " + DEVICE_IP, err);
+                alert("Verbinding mislukt. Controleer of de Arduino aanstaat en bereikbaar is op " + DEVICE_IP);
+            }
+        }
+
+        async function startStreamReader(url, signal) {
+            try {
+                const response = await fetch(url, { cache: 'no-cache', signal });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    let parts = buffer.split('\r\n');
+                    buffer = parts.pop();
+
+                    for (let part of parts) {
+                        if (part.trim()) {
+                            try {
+                                const result = JSON.parse(part);
+                                processFrame(result);
+                            } catch(e) {}
+                        }
+                    }
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') console.error("Stream fout:", err);
+            }
+        }
+
+        function processFrame(responseResult) {
+            if (responseResult.code !== 0 || !responseResult.data.image) return;
+
+            streamPreviewFrame.onload = () => {
+                streamPreview.width = streamPreviewFrame.width;
+                streamPreview.height = streamPreviewFrame.height;
+                streamPreviewCtx.drawImage(streamPreviewFrame, 0, 0);
+                // Bounding boxes zijn hier verwijderd voor een schone stream
+            };
+            streamPreviewFrame.src = `data:image/jpeg;base64,${responseResult.data.image}`;
+        }
+    </script>
+</body>
+</html>
