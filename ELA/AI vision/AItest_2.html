@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Grove Vision AI - Stream Only</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #000; /* Volledig zwart voor focus op video */
+            color: #efefef;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #stream-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            display: block;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            /* Zorg dat de 480x480 resolutie mooi past op het scherm */
+            max-width: 95vw;
+            max-height: 95vh;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="stream-container">
+        <canvas id="preview" crossorigin></canvas>
+    </div>
+
+    <script>
+        const baseHost = document.location.origin;
+        const streamUrl = baseHost + ':8080/stream';
+        const streamPreview = document.getElementById('preview');
+        const streamPreviewCtx = streamPreview.getContext('2d');
+        const streamPreviewFrame = new Image();
+        let streamPreviewController = null;
+
+        // Start de initialisatie zodra de pagina geladen is
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(autoStart, 500); // Korte vertraging voor stabiliteit
+        });
+
+        async function autoStart() {
+            try {
+                // 1. Forceer resolutie naar 480x480 (optId = 1)
+                const sensorCmd = btoa("SENSOR=1,1,1");
+                await fetch(`${baseHost}/command?base64=${sensorCmd}`);
+
+                // 2. Start de AI-verwerking (Invoke mode)
+                const invokeCmd = btoa("INVOKE=-1,0,0");
+                const response = await fetch(`${baseHost}/command?base64=${invokeCmd}`);
+                const data = await response.json();
+
+                if (data.code === 0) {
+                    // 3. Start de verbinding met de stream
+                    streamPreviewController = new AbortController();
+                    startStreamReader(`${streamUrl}/result`, streamPreviewController.signal);
+                }
+            } catch (err) {
+                console.error("Fout bij verbinden met Grove Vision AI:", err);
+            }
+        }
+
+        async function startStreamReader(url, signal) {
+            try {
+                const response = await fetch(url, { cache: 'no-cache', signal });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    let parts = buffer.split('\r\n');
+                    buffer = parts.pop();
+
+                    for (let part of parts) {
+                        if (part.trim()) {
+                            const result = JSON.parse(part);
+                            processFrame(result);
+                        }
+                    }
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') console.error("Stream onderbroken:", err);
+            }
+        }
+
+        function processFrame(responseResult) {
+            if (responseResult.code !== 0) return;
+
+            const frameBase64 = responseResult.data.image;
+            streamPreviewFrame.onload = () => {
+                // Zet canvas grootte gelijk aan binnenkomende frame (480x480)
+                streamPreview.width = streamPreviewFrame.width;
+                streamPreview.height = streamPreviewFrame.height;
+                
+                // Teken de video frame
+                streamPreviewCtx.drawImage(streamPreviewFrame, 0, 0);
+
+                // Optioneel: Teken bounding boxes als die in de data zitten
+                if (responseResult.data.boxes) {
+                    drawBoxes(responseResult.data.boxes);
+                }
+            };
+            streamPreviewFrame.src = `data:image/jpeg;base64,${frameBase64}`;
+        }
+
+        function drawBoxes(boxes) {
+            streamPreviewCtx.strokeStyle = '#8dc215';
+            streamPreviewCtx.lineWidth = 2;
+            streamPreviewCtx.font = '12px Arial';
+            streamPreviewCtx.fillStyle = '#8dc215';
+
+            boxes.forEach(box => {
+                const [x, y, w, h, score, target] = box;
+                // Teken rechthoek (berekening vanuit center x,y naar top-left)
+                streamPreviewCtx.strokeRect(x - w / 2, y - h / 2, w, h);
+                streamPreviewCtx.fillText(`ID: ${target} (${score}%)`, x - w / 2, y - h / 2 - 5);
+            });
+        }
+    </script>
+</body>
+</html>
