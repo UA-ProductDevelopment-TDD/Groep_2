@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Device Bluetooth Scanner</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f0f2f5; }
+        .container { display: flex; gap: 20px; flex-wrap: wrap; }
+        .device-card { 
+            flex: 1; min-width: 350px; border: 2px solid #ccc; padding: 20px; 
+            border-radius: 12px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .connected { border-color: #27ae60; background-color: #fafffa; }
+        .log { 
+            height: 200px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; 
+            padding: 10px; font-family: 'Consolas', monospace; font-size: 13px; 
+            margin: 15px 0; border-radius: 5px;
+        }
+        .controls { display: flex; gap: 5px; }
+        input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 10px 15px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #bdc3c7; }
+        .status-dot { height: 10px; width: 10px; background-color: #bbb; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .online .status-dot { background-color: #27ae60; }
+    </style>
+</head>
+<body>
+
+    <h1>Bluetooth UART Multi-Connector</h1>
+    <p>Deze versie scant op <strong>alle</strong> apparaten in de buurt.</p>
+
+    <div class="container">
+        <div id="card1" class="device-card">
+            <div id="stat-wrap1" class="status-header">
+                <span class="status-dot"></span><strong id="name1">Apparaat 1: Niet verbonden</strong>
+            </div>
+            <button onclick="connect(1)" style="margin-top:10px;">Zoek & Koppel</button>
+            <div class="log" id="log1"></div>
+            <div class="controls">
+                <input type="text" id="input1" placeholder="Stuur bericht..." disabled>
+                <button id="btn1" onclick="send(1)" disabled>Stuur</button>
+            </div>
+        </div>
+
+        <div id="card2" class="device-card">
+            <div id="stat-wrap2" class="status-header">
+                <span class="status-dot"></span><strong id="name2">Apparaat 2: Niet verbonden</strong>
+            </div>
+            <button onclick="connect(2)" style="margin-top:10px;">Zoek & Koppel</button>
+            <div class="log" id="log2"></div>
+            <div class="controls">
+                <input type="text" id="input2" placeholder="Stuur bericht..." disabled>
+                <button id="btn2" onclick="send(2)" disabled>Stuur</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // De specifieke UUID's voor de Nordic UART Service
+        const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const NUS_RX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Voor zenden (Browser -> Device)
+        const NUS_TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Voor ontvangen (Device -> Browser)
+
+        let rxCharacteristics = { 1: null, 2: null };
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        async function connect(id) {
+            const logEl = document.getElementById(`log${id}`);
+            const nameEl = document.getElementById(`name1`);
+            const wrapEl = document.getElementById(`stat-wrap${id}`);
+
+            try {
+                logEl.innerHTML += `> Dialoog openen...<br>`;
+                
+                // SCAN ZONDER FILTER
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [NUS_SERVICE_UUID] // VERPLICHT om hier de service te noemen!
+                });
+
+                logEl.innerHTML += `> Verbonden met ${device.name || 'Onbekend'}<br>`;
+                const server = await device.gatt.connect();
+                
+                logEl.innerHTML += `> UART Service ophalen...<br>`;
+                const service = await server.getPrimaryService(NUS_SERVICE_UUID);
+
+                // RX Characteristic (Schrijven)
+                rxCharacteristics[id] = await service.getCharacteristic(NUS_RX_UUID);
+
+                // TX Characteristic (Luisteren/Ontvangen)
+                const txChar = await service.getCharacteristic(NUS_TX_UUID);
+                await txChar.startNotifications();
+                txChar.addEventListener('characteristicvaluechanged', (event) => {
+                    const val = decoder.decode(event.target.value);
+                    appendLog(id, `IN: ${val.trim()}`);
+                });
+
+                // UI Updates
+                document.getElementById(`name${id}`).innerText = device.name || `Device ${id}`;
+                wrapEl.classList.add('online');
+                document.getElementById(`card${id}`).classList.add('connected');
+                document.getElementById(`input${id}`).disabled = false;
+                document.getElementById(`btn${id}`).disabled = false;
+                logEl.innerHTML += `> Systeem klaar.<br>`;
+
+                device.addEventListener('gattserverdisconnected', () => {
+                    wrapEl.classList.remove('online');
+                    document.getElementById(`card${id}`).classList.remove('connected');
+                    document.getElementById(`input${id}`).disabled = true;
+                    document.getElementById(`btn${id}`).disabled = true;
+                    logEl.innerHTML += `<span style="color:orange">> Verbinding verbroken</span><br>`;
+                });
+
+            } catch (err) {
+                console.error(err);
+                logEl.innerHTML += `<span style="color:#ff6b6b">> Fout: ${err.message}</span><br>`;
+            }
+        }
+
+        async function send(id) {
+            const input = document.getElementById(`input${id}`);
+            const char = rxCharacteristics[id];
+            if (!char || !input.value) return;
+
+            try {
+                // We voegen vaak \n toe omdat veel ESP32 programma's dit als 'einde bericht' zien
+                const data = encoder.encode(input.value + '\n');
+                await char.writeValueWithResponse(data);
+                appendLog(id, `UIT: ${input.value}`);
+                input.value = "";
+            } catch (err) {
+                appendLog(id, `FOUT: ${err.message}`);
+            }
+        }
+
+        function appendLog(id, msg) {
+            const logEl = document.getElementById(`log${id}`);
+            const now = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+            logEl.innerHTML += `<small>[${now}]</small> ${msg}<br>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    </script>
+</body>
+</html>
