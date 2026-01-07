@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>
+        robotdawg
+    </title>
+    <meta name="viewport" content="user-scalable=no">
+    <!-- add a stylized mono/sci-fi font -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* HUD-inspired theme and layout */
+        body {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            font-family: 'Orbitron', 'Courier New', monospace;
+            color: #BEE7A6;
+            font-size: 14px;
+            margin: 0 auto;
+            padding: 8px 0;
+            overflow: hidden;
+            background: #07160a; /* darker army green */
+            max-width: 1200px;
+            height: 100vh;
+        }
+
+        h1 {
+            color: #B7E2A1;
+            margin: 4px 0 6px 0;
+            font-size: 1.1rem;
+            letter-spacing: 2px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        /* Livestream container */
+        #livestream {
+            margin: 8px 12px;
+            width: fit-content;
+            background: #000;
+            border: 4px solid rgba(90,130,55,0.9);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* moving faint scanlines */
+        #livestream::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: linear-gradient(rgba(0,0,0,0.06) 50%, rgba(0,0,0,0) 50%);
+            background-size: 100% 3px;
+            animation: scan 6s linear infinite;
+            opacity: 0.6;
+        }
+        @keyframes scan {
+            0% { background-position-y: 0; }
+            100% { background-position-y: 100%; }
+        }
+
+        /* Crosshair */
+        .hud-crosshair {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 60%;
+            height: 60%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+        .hud-crosshair .line {
+            position: absolute;
+            background: rgba(180,255,170,0.85);
+        }
+        .hud-crosshair .horiz {
+            height: 2px;
+            left: 10%;
+            right: 10%;
+            top: 50%;
+            transform: translateY(-50%);
+            box-shadow: 0 0 8px rgba(180,255,170,0.45);
+        }
+        .hud-crosshair .vert {
+            width: 2px;
+            top: 10%;
+            bottom: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 8px rgba(180,255,170,0.45);
+        }
+        .hud-crosshair .ticks {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 120px;
+            height: 120px;
+            transform: translate(-50%, -50%);
+            border: 1px dashed rgba(180,255,170,0.12);
+            border-radius: 50%;
+            box-shadow: 0 0 20px rgba(120,200,100,0.06) inset;
+        }
+        .hud-crosshair .center-dot {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 8px;
+            height: 8px;
+            background: rgba(200,255,180,1);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(200,255,180,0.9);
+        }
+
+        /* HUD panels and info */
+        .info-panel {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            text-align: left;
+            margin: 8px 20px;
+            color: #bfe8a6;
+            flex-wrap: nowrap;
+            font-size: 0.95rem;
+            width: calc(100% - 40px);
+            max-width: 1100px;
+        }
+        .info-panel p {
+            background: linear-gradient(180deg, rgba(10,20,8,0.45), rgba(5,10,6,0.25));
+            border: 1px solid rgba(120,170,60,0.15);
+            padding: 8px 12px;
+            border-radius: 6px;
+            min-width: 160px;
+            box-shadow: 0 2px 0 rgba(0,0,0,0.5);
+        }
+
+        /* Canvas styling to blend with HUD */
+        canvas {
+            display: block;
+            width: 100%;
+            margin: 0;
+            height: 100%;
+            background: linear-gradient(180deg, rgba(10,18,8,0.85), rgba(20,36,18,0.95));
+            border-radius: 6px;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45);
+            border: 1px solid rgba(80,120,50,0.2);
+        }
+
+        /* Fire button overlay between joysticks */
+        .canvas-wrap {
+            position: relative;
+            width: calc(100% - 40px);
+            margin: 10px 20px;
+            height: 230px;
+            max-width: 1100px;
+        }
+        #fire-button {
+            /* Position handled by .control-buttons container */
+            /* transform: translate(-50%, -50%) removed as it's not needed with flexbox centering */
+            width: 76px;
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #ffb0b0, #d72626);
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(215,38,38,0.35), 0 0 30px rgba(255,80,80,0.12);
+        }
+        #fire-button:active { transform: scale(0.96); } /* Adjusted for flexbox parent */
+        #fire-button.disabled,
+        #fire-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .fire-pulse {
+            animation: fire-pulse 520ms ease;
+        }
+        @keyframes fire-pulse {
+            0% { box-shadow: 0 8px 22px rgba(215,38,38,0.35); } /* Adjusted for flexbox parent */
+            40% { box-shadow: 0 12px 38px rgba(255,80,80,0.6); } /* Adjusted for flexbox parent */
+            100% { box-shadow: 0 8px 22px rgba(215,38,38,0.35); } /* Adjusted for flexbox parent */
+        }
+
+        /* New container for control buttons */
+        .control-buttons {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%); /* Center the button group */
+            display: flex;
+            gap: 20px; /* Space between buttons */
+            z-index: 20; /* Ensure buttons are above canvas */
+        }
+
+        /* New auto-aim button styles */
+        #auto-aim-button {
+            width: 76px; /* Same size as fire button */
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #a0c0ff, #266dd7); /* Blue gradient */
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(38,109,215,0.35), 0 0 30px rgba(80,120,255,0.12);
+        }
+        #auto-aim-button:active { transform: scale(0.96); }
+        #auto-aim-button.disabled,
+        #auto-aim-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* New reset button styles */
+        #reset-button {
+            width: 76px; /* Same size as fire button */
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #a0ffb0, #26d76d); /* Greenish gradient */
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(38,215,109,0.35), 0 0 30px rgba(80,255,120,0.12);
+        }
+        #reset-button:active { transform: scale(0.96); }
+        #reset-button.disabled,
+        #reset-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* center slider + probability bar */
+        .center-control {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:8px;
+            min-width:220px;
+        }
+        .center-control input[type="range"] {
+            width:220px;
+            -webkit-appearance: none;
+            height:6px;
+            background: rgba(255,255,255,0.06);
+            border-radius:6px;
+        }
+        .probability {
+            width:220px;
+            height:12px;
+            background: rgba(0,0,0,0.12);
+            border-radius:8px;
+            overflow:hidden;
+            border:1px solid rgba(0,0,0,0.08);
+        }
+        .probability-fill {
+            height:100%;
+            width:50%;
+            background: linear-gradient(90deg,#66ff66,#1db71d);
+            transition: width 120ms linear;
+        }
+        .probability-fill.low { background: linear-gradient(90deg,#ff6666,#cc2222); }
+        .probability-fill.medium { background: linear-gradient(90deg,#ffb86b,#ff8c3a); }
+        .probability-fill.high { background: linear-gradient(90deg,#66ff66,#1db71d); }
+        .probability-text {
+            color:#BFE8A6;
+            font-size:0.9rem;
+        }
+
+
+        /* small responsive tweaks */
+        @media (max-width: 720px) {
+            #livestream { height: 40vh; }
+            .info-panel { flex-direction: column; gap: 6px; align-items: stretch; }
+            .info-panel p { width: 100%; }
+            .hud-crosshair { width: 80%; height: 80%; }
+        }
+
+        .livestream-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px; /* Buffer between livestream and side panel */
+            width: 100%;
+        }
+
+        /* New side panel styles */
+        #side-panel {
+            width: 480px;
+            height: 480px;
+            background: #000; /* Same as livestream */
+            border: 4px solid rgba(90,130,55,0.9); /* Same border as livestream */
+            border-radius: 6px; /* Same border-radius as livestream */
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45); /* Same shadow as livestream */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #BEE7A6; /* Inherit body color */
+            flex-direction: column; /* Ensure content stacks vertically */
+            gap: 15px; /* Spacing between radar and potential other content */
+        }
+
+        #radar-scanner {
+            width: 350px; /* Size of the radar */
+            height: 350px;
+            border-radius: 50%;
+            background: radial-gradient(circle at center, rgba(10, 30, 10, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
+            border: 2px solid rgba(90,130,55,0.7);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(90,130,55,0.4);
+        }
+
+        #radar-scanner::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(90,130,55,0) 50%, rgba(90,130,55,0.3) 100%);
+            transform-origin: center;
+            z-index: 3; /* Ensure sweep is above axes */
+            animation: radar-sweep 4s linear infinite;
+        }
+
+        #radar-scanner::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle, transparent 20%, rgba(90,130,55,0.1) 21%, transparent 22%, transparent 40%, rgba(90,130,55,0.1) 41%, transparent 42%, transparent 60%, rgba(90,130,55,0.1) 61%, transparent 62%);
+            z-index: 2; /* Ensure concentric circles are above axes */
+            border: 1px solid rgba(90,130,55,0.2);
+        }
+        @keyframes radar-sweep {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        /* Class to pause the radar sweep animation */
+        #radar-scanner.paused::before {
+            animation-play-state: paused;
+        }
+
+        #radar-targets-container {
+            position: absolute;
+            inset: 0;
+            pointer-events: none; /* Allow interaction with elements below if any */
+        }
+
+        .radar-dot {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(180, 255, 170, 0.9); /* Bright green */
+            border-radius: 50%; /* Remove animation: radar-dot-blink */
+            box-shadow: 0 0 5px rgba(180, 255, 170, 0.7);
+        }
+
+        @keyframes radar-dot-blink {
+            0% { opacity: 0.2; }
+            100% { opacity: 1; }
+        }
+
+        /* Radar Axes */
+        .radar-axis {
+            position: absolute;
+            background-color: rgba(90,130,55,0.3); /* Subtle green for axes */
+            z-index: 1; /* Below sweep and concentric circles */
+        }
+
+        .x-axis {
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 1px;
+        }
+        .y-axis {
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: 1px;
+        }
+
+        /* Radar Ticks */
+        .radar-tick {
+            position: absolute;
+            background-color: rgba(90,130,55,0.5); /* Slightly brighter than axes */
+            z-index: 1; /* Same layer as axes */
+        }
+
+        .x-tick {
+            width: 1px;
+            height: 6px; /* Small vertical line */
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .y-tick {
+            height: 1px;
+            width: 6px; /* Small horizontal line */
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        /* Button styling for radar controls */
+        .radar-control-button {
+            background-color: rgba(90,130,55,0.7);
+            color: #fff;
+            border: 1px solid rgba(180,255,170,0.4);
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Orbitron', monospace;
+            font-size: 0.75rem;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+     <h1 style="text-align:center">
+         ROBOTDAWG </h1>
+    
+    <!-- Livestream area (MJPEG) with HUD overlays -->
+    <div class="livestream-wrapper">
+    <div id="livestream" role="region" aria-label="Livestream">
+        <vision-ai-stream></vision-ai-stream>
+
+        <!-- HUD crosshair overlay -->
+        <div class="hud-crosshair" aria-hidden="true">
+            <div class="line horiz"></div>
+            <div class="line vert"></div>
+            <div class="ticks"></div>
+            <div class="center-dot"></div>
+        </div>
+    </div>
+    <div id="side-panel" role="region" aria-label="Side Information Panel">
+        <div style="margin-bottom: 20px;">ToF distance scanner</div>
+        <div id="radar-scanner" class="paused">
+            <div id="radar-targets-container"></div>
+            <div class="radar-axis x-axis"></div>
+            <div class="radar-axis y-axis"></div>
+            <!-- Ticks for X-axis (10cm = 17.5px, 20cm = 35px, ..., 100cm = 175px) -->
+            <div class="radar-tick x-tick" style="left: calc(50% + 17.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 17.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 35px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 35px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 52.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 52.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 70px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 70px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 87.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 87.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 105px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 105px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 122.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 122.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 140px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 140px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 157.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 157.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 175px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 175px);"></div>
+            <!-- Ticks for Y-axis -->
+            <div class="radar-tick y-tick" style="top: calc(50% + 17.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 17.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 35px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 35px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 52.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 52.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 70px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 70px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 87.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 87.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 105px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 105px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 122.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 122.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 140px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 140px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 157.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 157.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 175px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 175px);"></div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="radar-control-button" onclick="clearRadarDots()">Clear Dots</button>
+            <button class="radar-control-button" onclick="scanForNewDots()">Scan for New Dots</button>
+        </div>
+    </div>
+    </div>
+
+    
+
+    <!-- HUD / telemetry info (kept above the control canvas) -->
+    <div class="info-panel">
+        <p>
+            Joystick 1 (Links)<br>
+            X: <span id="x_coordinate1"> 0 </span>
+            Y: <span id="y_coordinate1"> 0 </span><br>
+            Speed: <span id="speed1"> 0 </span> %<br>
+            Angle: <span id="angle1"> 0 </span>
+        </p>
+        <div class="center-control" aria-hidden="false">
+            <label for="placeholder-slider" style="font-weight:700;color:#dfeeca">Probability</label>
+            <input id="placeholder-slider" type="range" min="0" max="100" value="50" />
+            <div class="probability" aria-label="probability">
+                <div id="prob-fill" class="probability-fill"></div>
+            </div>
+            <div id="prob-text" class="probability-text">50%</div>
+        </div>
+        <div class="center-control" aria-hidden="false">
+            <label style="font-weight:700;color:#dfeeca">Bluetooth</label>
+            <button id="connect-bluetooth-button" class="radar-control-button" onclick="connectBluetooth()">Connect Bluetooth</button>
+            <span id="bluetooth-status" style="font-size: 0.8rem; color: #BEE7A6;">Disconnected</span>
+        </div>
+        <p>
+            Joystick 2 (Rechts)<br>
+            X: <span id="x_coordinate2"> 0 </span>
+            Y: <span id="y_coordinate2"> 0 </span><br>
+            Speed: <span id="speed2"> 0 </span> %<br>
+            Angle: <span id="angle2"> 0 </span>
+        </p>
+    </div>
+ 
+    <!-- canvas wrapped so fire button can be positioned above it -->
+    <div class="canvas-wrap">
+        <canvas id="canvas" name="game"></canvas>
+        <div class="control-buttons">
+            <button id="fire-button" aria-label="Fire" title="Fire">FIRE</button>
+            <button id="auto-aim-button" aria-label="Auto Aim" title="Auto Aim">AUTO AIM</button>
+            <button id="reset-button" aria-label="Reset" title="Reset">RESET</button>
+        </div>
+    </div>
+ 
+     <script>
+        // filepath: /Users/DavideJB/Documents/technology/joysticks2.html
+        var canvas, ctx;
+        var fireBtn;
+        // slider/probability hookup (replaced)
+        var autoAimBtn; // Declare globally for the new button
+        var resetBtn; // Declare globally for the new reset button
+        var autoAimButtonHidden = false; // New variable to control auto aim button visibility
+        var radarTargetsContainer; // Declare globally
+        function setupPlaceholderSlider() {
+            var slider = document.getElementById('placeholder-slider');
+            var fill = document.getElementById('prob-fill');
+            var text = document.getElementById('prob-text');
+            if (!slider || !fill || !text) return;
+
+            function update() {
+                var v = parseInt(slider.value, 10);
+                fill.style.width = v + '%';
+                text.innerText = v + '%';
+
+                // state rules:
+                // <55% -> red, fire disabled
+                // 55-79 -> orange, fire enabled but requires confirmation
+                // >=80 -> green, fire enabled without confirmation
+                fill.className = 'probability-fill'; // reset
+                if (v < 55) {
+                    fill.classList.add('low');
+                    if (fireBtn) {
+                        fireBtn.disabled = true;
+                        fireBtn.classList.add('disabled');
+                        fireBtn.title = 'Blocked: probability too low';
+                        delete fireBtn.dataset.confirm;
+                    }
+                } else if (v < 80) {
+                    fill.classList.add('medium');
+                    if (fireBtn) {
+                        fireBtn.disabled = false;
+                        fireBtn.classList.remove('disabled');
+                        fireBtn.dataset.confirm = 'true';
+                        fireBtn.title = 'Fire requires confirmation';
+                    }
+                } else { // v >= 80
+                    fill.classList.add('high');
+                    if (fireBtn) {
+                        fireBtn.disabled = false;
+                        fireBtn.classList.remove('disabled');
+                        delete fireBtn.dataset.confirm;
+                        fireBtn.title = 'Fire';
+                    }
+                }
+
+                // --- New logic for auto aim button ---
+                if (autoAimBtn) {
+                    if (autoAimButtonHidden) {
+                        autoAimBtn.style.display = 'none';
+                        autoAimBtn.disabled = true;
+                    } else {
+                        autoAimBtn.style.display = 'flex'; // Restore default display
+                        if (v <= 30) {
+                            autoAimBtn.disabled = true;
+                            autoAimBtn.classList.add('disabled');
+                            autoAimBtn.title = 'Blocked: probability too low';
+                        } else { // v > 30
+                            autoAimBtn.disabled = false;
+                            autoAimBtn.classList.remove('disabled');
+                            autoAimBtn.title = 'Auto Aim';
+                        }
+                    }
+                }
+            }
+            slider.addEventListener('input', update);
+            update();
+        }
+
+        // Visual fire action: pulse button and draw brief flash on canvas (updated)
+        function fireAction(e) {
+            e && e.preventDefault && e.preventDefault();
+            if (!fireBtn) return;
+            // respect disabled state
+            if (fireBtn.disabled) return;
+
+            // if confirmation required, ask user
+            if (fireBtn.dataset && fireBtn.dataset.confirm === 'true') {
+                var ok = confirm('Probability moderate — are you sure you want to fire?');
+                if (!ok) return;
+            }
+
+            fireBtn.classList.remove('fire-pulse');
+            void fireBtn.offsetWidth; // restart animation
+            fireBtn.classList.add('fire-pulse');
+
+            // draw flash using canvas coordinates (midpoint between joysticks)
+            // Calculate the center of the fire button relative to the canvas
+            const fireBtnRect = fireBtn.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+
+            const cx = fireBtnRect.left + fireBtnRect.width / 2 - canvasRect.left;
+            const cy = fireBtnRect.top + fireBtnRect.height / 2 - canvasRect.top;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,80,80,0.18)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * 0.95, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            setTimeout(drawAll, 180);
+            console.log('FIRE!');
+            // Send "FIRE" message via Bluetooth
+            if (isConnected && rxCharacteristic) {
+                const fireMessage = "FIRE\n";
+                try {
+                    const encoder = new TextEncoder();
+                    rxCharacteristic.writeValue(encoder.encode(fireMessage));
+                    console.log("Sent Bluetooth message: FIRE");
+                } catch (error) {
+                    console.error("Error sending FIRE message via Bluetooth:", error);
+                }
+            }
+        }
+
+        // Variabelen voor de algemene canvas afmetingen en joystick grootte
+         var width, height, radius;
+         var joysticksDisabled = false;
+        
+        // Variabelen voor Joystick 1
+        var joystick1_x_orig, joystick1_y_orig; // Oorspronkelijke (center) positie van de achtergrondcirkel
+        var joystick1_x_pos, joystick1_y_pos;   // Huidige positie van de beweegbare joystick
+        let joystick1_paint = false; // Status: wordt deze joystick momenteel getekend/gebruikt?
+        let joystick1_coord = { x: 0, y: 0 }; // Huidige aanraak-/muiscoördinaten
+
+        // Variabelen voor Joystick 2
+        var joystick2_x_orig, joystick2_y_orig;
+        var joystick2_x_pos, joystick2_y_pos;
+        let joystick2_paint = false;
+        let joystick2_coord = { x: 0, y: 0 };
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            radarTargetsContainer = document.getElementById('radar-targets-container'); // Get reference
+            autoAimBtn = document.getElementById('auto-aim-button'); // Get reference for the new button
+            fireBtn = document.getElementById('fire-button');
+            resize();
+
+            setupPlaceholderSlider();
+
+            // Event listeners voor muis en touch — bind to canvas so UI controls (slider) work
+            canvas.addEventListener('mousedown', startDrawing);
+            window.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mousemove', Draw);
+
+            // touch events on canvas only; allow preventDefault for canvas touch behavior
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            window.addEventListener('touchend', stopDrawing);
+            window.addEventListener('touchcancel', stopDrawing);
+            canvas.addEventListener('touchmove', Draw, { passive: false });
+
+            window.addEventListener('resize', resize);
+
+            // Fire button handlers (mouse + touch)
+            if (fireBtn) {
+                fireBtn.addEventListener('mousedown', fireAction);
+                fireBtn.addEventListener('touchstart', function(e){ e.preventDefault(); fireAction(e); }, {passive:false});
+            }
+
+            // Auto Aim button handlers (mouse + touch)
+            if (autoAimBtn) {
+                autoAimBtn.addEventListener('mousedown', autoAimAction);
+                autoAimBtn.addEventListener('touchstart', function(e){ e.preventDefault(); autoAimAction(e); }, {passive:false});
+            }
+            
+            // Reset button handlers (mouse + touch)
+            resetBtn = document.getElementById('reset-button');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', resetAction);
+            }
+
+            // Load livestream after UI is ready
+            var streamImg = document.getElementById('livestream-stream');
+            if (streamImg && streamImg.dataset.src) {
+                streamImg.src = streamImg.dataset.src;
+            }
+
+            // Add radar dots
+            addRadarDots(5); // Add 5 random dots
+        });
+
+        function addRadarDots(count) {
+            if (!radarTargetsContainer) return;
+
+            // Clear existing dots
+            radarTargetsContainer.innerHTML = '';
+
+            const radarSize = 350; // #radar-scanner width/height
+            const radarRadius = radarSize / 2;
+            const dotSize = 4; // .radar-dot width/height (50% smaller)
+
+            for (let i = 0; i < count; i++) {
+                // Generate random angle and distance from center
+                const angle = Math.random() * 2 * Math.PI;
+                const distance = Math.random() * radarRadius; // Max distance is radarRadius
+
+                const x = radarRadius + distance * Math.cos(angle);
+                const y = radarRadius + distance * Math.sin(angle);
+
+                const dot = document.createElement('div');
+                dot.classList.add('radar-dot');
+                dot.style.left = `${x - dotSize / 2}px`; // Center the dot
+                dot.style.top = `${y - dotSize / 2}px`;   // Center the dot
+                radarTargetsContainer.appendChild(dot);
+            }
+        };
+
+        function clearRadarDots() {
+            if (radarTargetsContainer) {
+                radarTargetsContainer.innerHTML = '';
+            }
+        }
+
+        function scanForNewDots() {
+            // Wis bestaande dots als de functionaliteit is ingeschakeld
+            if (shouldClearDotsOnScan) {
+                clearRadarDots();
+            }
+            if (isConnected && rxCharacteristic) {
+                const scanMessage = "SCAN\n"; // Add newline for consistency with other messages
+                try {
+                    const encoder = new TextEncoder();
+                    rxCharacteristic.writeValue(encoder.encode(scanMessage));
+                    console.log("Sent Bluetooth message: SCAN");
+                } catch (error) {
+                    console.error("Error sending SCAN message via Bluetooth:", error);
+                }
+            }
+        }
+        // Hulpfunctie om de coördinaten van de muis/touch te krijgen
+
+        function autoAimAction(e) {
+            e && e.preventDefault && e.preventDefault();
+            console.log('AUTO AIM engaged!');
+            // Send "AIM" message via Bluetooth
+            if (isConnected && rxCharacteristic) {
+                const aimMessage = "AIM\n";
+                try {
+                    const encoder = new TextEncoder();
+                    rxCharacteristic.writeValue(encoder.encode(aimMessage));
+                    console.log("Sent Bluetooth message: AIM");
+                } catch (error) {
+                    console.error("Error sending AIM message via Bluetooth:", error);
+                }
+            }
+            // Add your auto aim logic here
+        }
+
+        function resetAction() {
+            if (isConnected && rxCharacteristic) {
+                const resetMessage = "RESET\n";
+                try {
+                    const encoder = new TextEncoder();
+                    rxCharacteristic.writeValue(encoder.encode(resetMessage));
+                    console.log("Sent Bluetooth message: RESET");
+                } catch (error) {
+                    console.error("Error sending RESET message via Bluetooth:", error);
+                }
+            }
+            // Add your auto aim logic here
+        }
+
+        // Hulpfunctie om de coördinaten van de muis/touch te krijgen
+        function getPosition(event) {
+            let rect = canvas.getBoundingClientRect();
+            let x, y;
+
+            if (event.touches && event.touches.length > 0) {
+                // Gebruik de eerste touch-coördinaat als standaard
+                x = event.touches[0].clientX - rect.left;
+                y = event.touches[0].clientY - rect.top;
+            } else {
+                x = event.clientX - rect.left;
+                y = event.clientY - rect.top;
+            }
+            return { x: x, y: y };
+        }
+        
+        function is_it_in_the_circle(x, y, x_orig, y_orig) {
+            var current_radius = Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2));
+            return radius + 20 >= current_radius; // +20 is de marge van de achtergrond
+        }
+
+        // Functie om de afmetingen en posities opnieuw in te stellen
+        function resize() {
+            // Set canvas size based on its CSS-rendered size so it sits under the livestream
+            width = canvas.clientWidth;
+            height = canvas.clientHeight;
+            // radius limited by canvas height and width to keep buttons large but inside the control area
+            radius = Math.min(width / 6, height / 3, 100) * 0.7;
+
+            ctx.canvas.width = Math.floor(width);
+            ctx.canvas.height = Math.floor(height);
+            
+            // Posities voor twee joysticks (links en rechts), lager in the control canvas
+            joystick1_x_orig = width / 4;
+            joystick1_y_orig = height / 2;
+            
+            joystick2_x_orig = width * 3 / 4;
+            joystick2_y_orig = height / 2;
+
+            // Standaard joystick positie is in het midden van de achtergrond
+            joystick1_x_pos = joystick1_x_orig;
+            joystick1_y_pos = joystick1_y_orig;
+            joystick2_x_pos = joystick2_x_orig;
+            joystick2_y_pos = joystick2_y_orig;
+
+            drawAll(); // Teken alles opnieuw na resizing
+        }
+        // Teken de achtergrond van één joystick
+        function background(x_orig, y_orig) {
+            ctx.beginPath();
+            ctx.arc(x_orig, y_orig, radius + 20, 0, Math.PI * 2, true);
+            ctx.fillStyle = joysticksDisabled ? 'rgba(80,80,80,0.2)' : '#cfd9b8';
+            ctx.fill();
+        }
+
+        // Teken de beweegbare knop van één joystick
+        function joystick(x, y, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = joysticksDisabled ? '#333' : '#394b1f';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+        }
+
+        // Teken beide joysticks en hun achtergronden
+        function drawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            var c1 = joysticksDisabled ? '#555' : '#C2B280';
+            var c2 = joysticksDisabled ? '#555' : '#556B2F';
+
+            // Teken Joystick 1
+            background(joystick1_x_orig, joystick1_y_orig);
+            joystick(joystick1_x_pos, joystick1_y_pos, c1); // Khaki
+            
+            // Teken Joystick 2
+            background(joystick2_x_orig, joystick2_y_orig);
+            joystick(joystick2_x_pos, joystick2_y_pos, c2); // Olive
+
+            // Add labels
+            ctx.font = '12px Orbitron, "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#BEE7A6';
+            const labelOffset = radius + 35; // Position below the joystick background
+
+            ctx.fillText('WALK', joystick1_x_orig, joystick1_y_orig + labelOffset);
+            ctx.fillText('AIM', joystick2_x_orig, joystick2_y_orig + labelOffset);
+        }
+
+
+        // Start de tekening (muis omlaag / touch start)
+        function startDrawing(event) {
+            event.preventDefault(); // Voorkomt standaard browseracties (zoals scrollen op touch)
+            
+            if (joysticksDisabled) return;
+            
+            let coords;
+            // Als het een touch event is, doorloop alle touches
+            if (event.touches && event.touches.length > 0) {
+                for (let i = 0; i < event.touches.length; i++) {
+                    coords = getPosition(event.touches[i]);
+                    // Controleer of de aanraking binnen Joystick 1 valt EN deze nog niet actief is
+                    if (!joystick1_paint && is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                        joystick1_paint = true;
+                        joystick1_coord = coords;
+                        Draw(event.touches[i], 1);
+                        return; // Behandel slechts één joystick per aanraking start
+                    } 
+                    // Controleer of de aanraking binnen Joystick 2 valt EN deze nog niet actief is
+                    else if (!joystick2_paint && is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                        joystick2_paint = true;
+                        joystick2_coord = coords;
+                        Draw(event.touches[i], 2);
+                        return; // Behandel slechts één joystick per aanraking start
+                    }
+                }
+            } 
+            // Als het een muis event is (single-touch/click)
+            else {
+                coords = getPosition(event);
+                if (is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                    joystick1_paint = true;
+                    joystick1_coord = coords;
+                    Draw(event, 1);
+                } else if (is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                    joystick2_paint = true;
+                    joystick2_coord = coords;
+                    Draw(event, 2);
+                }
+            }
+        }
+
+
+        // Stop de tekening (muis omhoog / touch einde)
+        function stopDrawing(event) {
+            event.preventDefault();
+            
+            // Bepaal welke joystick is losgelaten (dit is complexer met touches, dus we resetten ze beide)
+            // Voor touch events moet je kijken naar event.changedTouches om te zien welke touch stopte.
+            // Voor eenvoud, en omdat we geen touch ID's bijhouden, resetten we beide indien nodig
+            let shouldRedraw = false;
+            
+            if (joystick1_paint) {
+                joystick1_paint = false;
+                joystick1_x_pos = joystick1_x_orig;
+                joystick1_y_pos = joystick1_y_orig;
+                document.getElementById("x_coordinate1").innerText = 0;
+                document.getElementById("y_coordinate1").innerText = 0;
+                document.getElementById("speed1").innerText = 0;
+                document.getElementById("angle1").innerText = 0;
+                shouldRedraw = true;
+                // --- NEW: Send "J1;0;0;0;0" message via Bluetooth when Joystick 1 is released ---
+                if (isConnected && rxCharacteristic) {
+                    const stopMessage = "J1;0;0;0;0\n";
+                    try {
+                        const encoder = new TextEncoder();
+                        rxCharacteristic.writeValue(encoder.encode(stopMessage));
+                        console.log("Sent Bluetooth message: J1;0;0;0;0");
+                    } catch (error) {
+                        console.error("Error sending J1 stop message via Bluetooth:", error);
+                    }
+                }
+            }
+
+            if (joystick2_paint) {
+                joystick2_paint = false;
+                joystick2_x_pos = joystick2_x_orig;
+                joystick2_y_pos = joystick2_y_orig;
+                document.getElementById("x_coordinate2").innerText = 0;
+                document.getElementById("y_coordinate2").innerText = 0;
+                document.getElementById("speed2").innerText = 0;
+                document.getElementById("angle2").innerText = 0;
+                shouldRedraw = true;
+                // --- NEW: Send "J2;0;0;0;0" message via Bluetooth when Joystick 2 is released ---
+                if (isConnected && rxCharacteristic) {
+                    const stopMessage = "J2;0;0;0;0\n";
+                    try {
+                        const encoder = new TextEncoder();
+                        rxCharacteristic.writeValue(encoder.encode(stopMessage));
+                        console.log("Sent Bluetooth message: J2;0;0;0;0");
+                    } catch (error) {
+                        console.error("Error sending J2 stop message via Bluetooth:", error);
+                    }
+                }
+            }
+            
+            if (shouldRedraw) {
+                drawAll();
+            }
+        }
+
+        // Teken/update de joysticks
+        function Draw(event, specific_joystick_id = 0) {
+            event.preventDefault();
+            if (joysticksDisabled) return;
+
+            // Als het een muis event is, kijk of een van de joysticks actief is
+            if (!event.touches && (joystick1_paint || joystick2_paint)) {
+                let coords = getPosition(event);
+                if (joystick1_paint) {
+                    joystick1_coord = coords;
+                    updateJoystick(1);
+                } else if (joystick2_paint) {
+                    joystick2_coord = coords;
+                    updateJoystick(2);
+                }
+            } 
+            // Als het een touch event is, doorloop alle actieve touches
+            else if (event.touches && event.touches.length > 0) {
+                drawAll(); // Wis en teken alles opnieuw voor de soepelste update
+                
+                for (let i = 0; i < event.touches.length; i++) {
+                    let coords = getPosition(event.touches[i]);
+                    let touch_id = event.touches[i].identifier;
+
+                    // Dit is een vereenvoudigde aanpak omdat we geen touch ID's koppelen. 
+                    // We gaan er nu van uit dat als een joystick actief is (paint=true),
+                    // de dichtstbijzijnde touch die joystick bestuurt.
+                    
+                    if (joystick1_paint) {
+                        joystick1_coord = coords;
+                        updateJoystick(1);
+                    }
+                    if (joystick2_paint) {
+                        joystick2_coord = coords;
+                        updateJoystick(2);
+                    }
+                }
+            }
+            
+            // Als het een startDrawing event was, en we weten welke joystick (1 of 2)
+            else if (specific_joystick_id === 1 && joystick1_paint) {
+                 updateJoystick(1);
+            } else if (specific_joystick_id === 2 && joystick2_paint) {
+                 updateJoystick(2);
+            }
+            
+            // Teken alles opnieuw, alleen als er een update is geweest
+            if (joystick1_paint || joystick2_paint) {
+                drawAll();
+            }
+        } 
+
+
+        // Logica om een specifieke joystick bij te werken (1 of 2)
+        function updateJoystick(id) {
+            let x_orig, y_orig, coord;
+            let x_coord_id, y_coord_id, speed_id, angle_id;
+            let color;
+            
+            // Wijs de juiste variabelen toe op basis van de ID
+            if (id === 1) {
+                x_orig = joystick1_x_orig;
+                y_orig = joystick1_y_orig;
+                coord = joystick1_coord;
+                x_coord_id = "x_coordinate1";
+                y_coord_id = "y_coordinate1";
+                speed_id = "speed1";
+                angle_id = "angle1";
+                color = '#F08080';
+            } else if (id === 2) {
+                x_orig = joystick2_x_orig;
+                y_orig = joystick2_y_orig;
+                coord = joystick2_coord;
+                x_coord_id = "x_coordinate2";
+                y_coord_id = "y_coordinate2";
+                speed_id = "speed2";
+                angle_id = "angle2";
+                color = '#8080F0';
+            } else {
+                return; // Onbekende ID
+            }
+
+
+            var angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
+            var current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
+
+            // Bereken de positie van de beweegbare knop
+            let x, y;
+            if (radius >= current_radius) {
+                x = coord.x;
+                y = coord.y;
+            } else {
+                x = radius * Math.cos(angle) + x_orig;
+                y = radius * Math.sin(angle) + y_orig;
+            }
+
+            // Update de globale positie variabelen
+            if (id === 1) {
+                joystick1_x_pos = x;
+                joystick1_y_pos = y;
+            } else {
+                joystick2_x_pos = x;
+                joystick2_y_pos = y;
+            }
+
+
+            // Bereken de weer te geven waarden
+            let angle_in_degrees;
+            if (Math.sign(angle) == -1) {
+                angle_in_degrees = Math.round(-angle * 180 / Math.PI);
+            } else {
+                angle_in_degrees = Math.round(360 - angle * 180 / Math.PI);
+            }
+
+            var speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
+
+            var x_relative = Math.round(x - x_orig);
+            var y_relative = Math.round(y - y_orig);
+            
+            // Update de display elementen
+            document.getElementById(x_coord_id).innerText = x_relative;
+            document.getElementById(y_coord_id).innerText = y_relative;
+            document.getElementById(speed_id).innerText = speed;
+            document.getElementById(angle_id).innerText = angle_in_degrees;
+
+            // Verstuur Joystick 1 data via Bluetooth wanneer de positie verandert (max 1 per seconde)
+            if (id === 1 && isConnected && rxCharacteristic) {
+                const now = Date.now();
+                if (now - lastMoveSentTime >= 1000) { // Rate limit to 1 message per second
+                    const dataString = `J1;${x_relative};${y_relative};${speed};${angle_in_degrees}\n`;
+                    try {
+                        const encoder = new TextEncoder();
+                        rxCharacteristic.writeValue(encoder.encode(dataString));
+                        lastMoveSentTime = now;
+                    } catch (error) {
+                        console.error("Fout bij het verzenden van MOVE data via Bluetooth:", error);
+                    }
+                }
+            }
+
+            // Verstuur Joystick 2 data via Bluetooth wanneer de positie verandert (max 2 per seconde)
+            if (id === 2 && isConnected && rxCharacteristic) {
+                const now = Date.now();
+                if (now - lastMoveSentTime2 >= 500) { // 500ms for 2 times per second
+                    const dataString = `J2;${x_relative};${y_relative};${speed};${angle_in_degrees}\n`;
+                    try {
+                        const encoder = new TextEncoder();
+                        rxCharacteristic.writeValue(encoder.encode(dataString));
+                        lastMoveSentTime2 = now;
+                    } catch (error) {
+                        console.error("Fout bij het verzenden van MOVE data (Joystick 2) via Bluetooth:", error);
+                    }
+                }
+            }
+        } 
+    </script>
+    <script>
+        // UUID's van de BLE UART Service (moeten overeenkomen met de ESP32 code)
+        const UART_SERVICE_UUID      = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'; // Nordic UART Service UUID
+        const UART_TX_CHAR_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Characteristic for receiving notifications from ESP32 (Browser listens)
+        const UART_RX_CHAR_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Characteristic for sending data to ESP32 (Browser writes)
+        
+        let bluetoothDevice;
+        let activeRadarDots = new Map(); // Stores { angle: { element: DOM_element, timestamp: number } }
+
+        // Global constants for radar display
+        const RADAR_SIZE = 350; // #radar-scanner width/height
+        const RADAR_RADIUS = RADAR_SIZE / 2;
+        const DOT_SIZE = 4;
+        let txCharacteristic;
+        let rxCharacteristic; // New variable for sending data
+        let isConnected = false;
+        let lastMoveSentTime = 0; // Houdt bij wanneer het laatste MOVE bericht is verstuurd
+        let lastMoveSentTime2 = 0; // Houdt bij wanneer het laatste MOVE bericht voor Joystick 2 is verstuurd
+        let shouldClearDotsOnScan = true; // Nieuwe variabele om het wissen van dots in/uit te schakelen bij scannen
+        
+        const MAX_DOT_AGE_MS = 5000; // Dots fade over 5 seconds
+        const MIN_DOT_OPACITY = 0.25; // Minimum opacity before removal
+
+        function onDisconnected() {
+ isConnected = false;
+ console.log('Bluetooth verbinding verbroken.');
+ document.getElementById('bluetooth-status').textContent = 'Disconnected';
+ const connectButton = document.getElementById('connect-bluetooth-button');
+            connectButton.textContent = 'Connect Bluetooth';
+            // Pause radar scanner animation when disconnected
+            document.getElementById('radar-scanner').classList.add('paused');
+            connectButton.classList.remove('connected');
+        }
+
+        function handleCharacteristicNotifications(event) {
+            const value = event.target.value;
+            const dataString = new TextDecoder().decode(value);
+ console.log('Received Bluetooth data:', dataString);
+
+            // Expected format: angle1,distance1,angle2,distance2,...
+            const dataPairs = dataString.split(';');
+            const radarData = [];
+
+            for (let i = 0; i < dataPairs.length; i += 2) {
+                const angle = parseFloat(dataPairs[i]);
+                const distance = parseFloat(dataPairs[i + 1]);
+
+                if (!isNaN(angle) && !isNaN(distance)) {
+                    radarData.push({ angle: angle, distance: distance });
+                }
+            } // End of for loop
+
+            updateRadarDots(radarData); // Update radar display with new data
+        }
+
+        function updateRadarDots(data) {
+            if (!radarTargetsContainer) return;
+        
+            const cmToPixelRatio = 1.75;
+            const now = Date.now();
+            const reportedAngles = new Set();
+        
+            data.forEach(item => {
+                reportedAngles.add(item.angle);
+                const angleRadians = item.angle * Math.PI / 180;
+                const distancePixels = item.distance * cmToPixelRatio;
+                let dotEntry = activeRadarDots.get(item.angle);
+        
+                // If a dot for this angle already exists, remove it before creating a new one
+                // This ensures that an "updated" dot is treated as a new, bright dot.
+                if (dotEntry) {
+                    dotEntry.element.parentNode.removeChild(dotEntry.element);
+                    activeRadarDots.delete(item.angle);
+                }
+                
+                const newDot = document.createElement('div');
+                newDot.classList.add('radar-dot');
+                radarTargetsContainer.appendChild(newDot);
+                dotEntry = { element: newDot, timestamp: now };
+                activeRadarDots.set(item.angle, dotEntry);
+        
+                const xOffset = distancePixels * Math.sin(angleRadians);
+                const yOffset = -distancePixels * Math.cos(angleRadians);
+                dotEntry.element.style.left = `${RADAR_RADIUS + xOffset - DOT_SIZE / 2}px`;
+                dotEntry.element.style.top = `${RADAR_RADIUS + yOffset - DOT_SIZE / 2}px`;
+                dotEntry.element.style.opacity = 1; // New or updated dots are fully bright
+            });
+        }
+
+        function fadeAndRemoveOldDots() {
+            const now = Date.now();
+        
+            for (let [angle, dotEntry] of activeRadarDots) {
+                const age = now - dotEntry.timestamp;
+        
+                // Calculate opacity, ensuring it doesn't go below MIN_DOT_OPACITY
+                // Dots will no longer be removed based on age, only when overwritten.
+                const opacity = Math.max(MIN_DOT_OPACITY, 1 - (age / MAX_DOT_AGE_MS));
+                dotEntry.element.style.opacity = opacity;
+            }
+        }
+        
+        // Call fadeAndRemoveOldDots periodically
+        setInterval(fadeAndRemoveOldDots, 100); // Update every 100ms
+
+        function clearRadarDots() {
+            if (radarTargetsContainer) {
+                radarTargetsContainer.innerHTML = ''; // Clear all dot elements from DOM
+            }
+            activeRadarDots.clear(); // Clear the map of active dots
+        }
+
+        // Modified addRadarDots to use the new activeRadarDots structure and set timestamps for "Scan for New Dots" button
+        function addRadarDots(count) {
+            if (!radarTargetsContainer) return;
+        
+            clearRadarDots(); // Clear existing dots and the map
+        
+            const radarRadius = RADAR_SIZE / 2;
+            const cmToPixelRatio = 1.75;
+        
+            for (let i = 0; i < count; i++) {
+                const randomAngle = Math.random() * 360; // Angle in degrees
+                // Max distance is radarRadius, convert back to cm for updateRadarDots input
+                const randomDistance = Math.random() * (radarRadius / cmToPixelRatio); 
+                
+                // Call updateRadarDots to handle creation/replacement and initial brightness
+                updateRadarDots([{ angle: randomAngle, distance: randomDistance }]);
+            }
+        }
+
+        async function connectBluetooth() {
+            if (!('bluetooth' in navigator)) {
+                alert('Your browser or device does not support Web Bluetooth, or Bluetooth is turned off.');
+                return;
+            }
+            
+            const connectButton = document.getElementById('connect-bluetooth-button');
+ const statusDisplay = document.getElementById('bluetooth-status');
+
+            try {
+ statusDisplay.textContent = 'Scanning for devices...';
+
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true, 
+                    optionalServices: [UART_SERVICE_UUID] 
+                });
+                
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+ statusDisplay.textContent = 'Connecting to GATT Server...';
+                
+                const server = await bluetoothDevice.gatt.connect();
+
+ statusDisplay.textContent = 'Discovering service...';
+
+                const service = await server.getPrimaryService(UART_SERVICE_UUID);
+
+ statusDisplay.textContent = 'Discovering characteristic...';
+
+                txCharacteristic = await service.getCharacteristic(UART_TX_CHAR_UUID);
+                
+                await txCharacteristic.startNotifications();
+                txCharacteristic.addEventListener('characteristicvaluechanged', handleCharacteristicNotifications);
+                // Resume radar scanner animation when connected
+
+                // Get RX characteristic (for sending data to ESP32)
+                rxCharacteristic = await service.getCharacteristic(UART_RX_CHAR_UUID);
+                document.getElementById('radar-scanner').classList.remove('paused');
+
+                isConnected = true;
+                connectButton.textContent = 'Connected';
+ connectButton.classList.add('connected');
+ statusDisplay.textContent = `Connected to ${bluetoothDevice.name || 'Unknown Device'}`;
+
+            } catch (error) {
+                console.error("Bluetooth connection error:", error);
+                statusDisplay.textContent = 'Connection failed or cancelled.';
+                document.getElementById('radar-scanner').classList.add('paused');
+                connectButton.textContent = 'Connect Bluetooth';
+                connectButton.classList.remove('connected');
+            }
+        }
+    </script>
+    <script>
+    class VisionAiStream extends HTMLElement {
+        constructor() {
+            super();
+            this.attachShadow({ mode: 'open' });
+            // Configuratie: IP-adres van de camera
+            this.deviceIp = "192.168.137.166";
+            this.resolution = 1; // 0 = 240x240, 1 = 480x480
+        }
+
+        connectedCallback() {
+            this.render();
+            this.startCamera();
+        }
+
+        render() {
+            // Adjusted max-width to 480px to match the original livestream size
+            this.shadowRoot.innerHTML = `
+            <style>
+                :host {
+                    display: inline-block;
+                    background: #111;
+                    border: 1px solid #444;
+                    border-radius: 8px;
+                    padding: 0; /* No padding, let the canvas fill */
+                    font-family: sans-serif;
+                }
+                .container { 
+                    display: flex; 
+                    flex-direction: column; 
+                    align-items: center; 
+                    justify-content: center;
+                    width: 480px; /* Explicitly set container size */
+                    height: 480px;
+                }
+                canvas { 
+                    background: #000; 
+                    width: 100%; 
+                    max-width: 480px; /* Adjusted to 480px */
+                    aspect-ratio: 1/1; 
+                    border-radius: 4px;
+                    image-rendering: pixelated;
+                }
+            </style>
+            <div class="container">
+                <canvas id="preview"></canvas>
+            </div>
+            `;
+        }
+
+        async startCamera() {
+            const canvas = this.shadowRoot.getElementById('preview');
+            const status = this.shadowRoot.getElementById('status');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            const baseHost = `http://${this.deviceIp}`;
+
+            try {
+                // 1. Stel resolutie in
+                const sensorCmd = btoa(`SENSOR=1,1,${this.resolution}`);
+                await fetch(`${baseHost}/command?base64=${sensorCmd}`);
+
+                // 2. Start Invoke
+                const invokeCmd = btoa("INVOKE=-1,0,0");
+                const resp = await fetch(`${baseHost}/command?base64=${invokeCmd}`);
+                const data = await resp.json();
+
+                if (data.code === 0) {
+                    this.readStream(`${baseHost}:8080/stream/result`, ctx, img, canvas);
+                }
+            } catch (err) {
+                // Toon de foutmelding op de console, niet op de pagina
+                status.innerText = "Verbinding mislukt";
+                status.style.color = "red";
+            }
+        }
+
+        async readStream(url, ctx, img, canvas) {
+            const response = await fetch(url, { cache: 'no-cache' });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                let parts = buffer.split('\r\n');
+                buffer = parts.pop();
+                for (let part of parts) {
+                    if (part.trim()) {
+                        const result = JSON.parse(part);
+                        if (result.data?.image) {
+                            img.onload = () => {
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+                                ctx.drawImage(img, 0, 0);
+                                // Projecteer het IP-adres op de stream
+                                ctx.font = '16px Orbitron, sans-serif'; // Gebruik een passend lettertype en grootte
+                                ctx.fillStyle = '#BEE7A6'; // Gebruik de bestaande HUD groene kleur
+                                ctx.shadowColor = 'rgba(0, 255, 0, 0.7)'; // Optioneel: voeg een subtiele gloed toe
+                                ctx.shadowBlur = 5;
+                                ctx.fillText(`IP: ${this.deviceIp}`, 10, 25); // Positie (10, 25) voor padding
+                                ctx.shadowBlur = 0; // Reset schaduw voor eventuele volgende tekeningen
+                            };
+                            img.src = `data:image/jpeg;base64,${result.data.image}`;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Registreer het nieuwe element
+    customElements.define('vision-ai-stream', VisionAiStream);
+    </script>
+ </body>
+ </html>
