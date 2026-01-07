@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Bittle Bluetooth besturing</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    button {
+      font-size: 0.9rem;
+      padding: 6px 10px;
+      margin: 3px;
+      display: inline-block;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    #joystick {
+      width: 200px;
+      height: 200px;
+      border: 2px solid #333;
+      border-radius: 10px;
+      position: relative;
+      margin-top: 20px;
+      touch-action: none;
+      user-select: none;
+    }
+    #joystickCenter {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      margin-top: -5px;
+      background: #333;
+      border-radius: 50%;
+    }
+    #joystickInfo {
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+    .group-title {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>Bittle besturen via Bluetooth</h1>
+
+  <p>
+    Gebruik Chrome/Edge op desktop, met Bluetooth aan. Klik eerst op "Verbind met Bittle".
+  </p>
+
+  <!-- Verbinden -->
+  <button onclick="connectBittle()">Verbind met Bittle</button>
+
+  <!-- Basis acties -->
+  <div style="margin-top: 10px;">
+    <button onclick="sendCmd(WALK)">Walk (vooruit)</button>
+    <button onclick="sendCmd(RETREAT)">Retreat (achteruit)</button>
+    <button onclick="sendCmd(REST)">Rest (stop/lig)</button>
+    <button onclick="sendCmd(ATTENTION)">Attention (c)</button>
+  </div>
+
+  <!-- Joystick -->
+  <h3>Joystick</h3>
+  <p>Sleep in het vierkant: boven = walk, beneden = retreat, links/rechts = draaien.</p>
+  <div id="joystick">
+    <div id="joystickCenter"></div>
+  </div>
+  <div id="joystickInfo">Joystick: neutraal</div>
+
+  <!-- Alle commando-knoppen -->
+  <div class="group-title">Alle commando's</div>
+  <div>
+    <button onclick="sendCmd(STAND_UP)">Stand up</button>
+    <button onclick="sendCmd(SIT)">Sit</button>
+    <button onclick="sendCmd(STRETCH)">Stretch</button>
+    <button onclick="sendCmd(PUSH_UPS)">Push ups</button>
+    <button onclick="sendCmd(CHEERS)">Cheers</button>
+    <button onclick="sendCmd(HELLO)">Hello</button>
+    <button onclick="sendCmd(COME_HERE)">Come here</button>
+    <button onclick="sendCmd(CHECK)">Check</button>
+    <button onclick="sendCmd(STEP)">Step</button>
+    <button onclick="sendCmd(SPIN)">Spin</button>
+    <button onclick="sendCmd(CRAWL)">Crawl</button>
+    <button onclick="sendCmd(WALK)">Walk</button>
+    <button onclick="sendCmd(RETREAT)">Retreat</button>
+    <button onclick="sendCmd(PUSH)">Push</button>
+    <button onclick="sendCmd(KICK)">Kick</button>
+    <button onclick="sendCmd(PLAY_DEAD)">Play dead</button>
+    <button onclick="sendCmd(PEE)">Pee</button>
+    <button onclick="sendCmd(HUG)">Hug</button>
+    <button onclick="sendCmd(HANDS_UP)">Hands up</button>
+    <button onclick="sendCmd(HANDSTAND)">Handstand</button>
+    <button onclick="sendCmd(ROLL_BACK_UP)">Roll back up</button>
+    <button onclick="sendCmd(SCRATCH)">Scratch</button>
+    <button onclick="sendCmd(DIG)">Dig</button>
+    <button onclick="sendCmd(SNIFF)">Sniff</button>
+    <button onclick="sendCmd(SLEEP)">Go to sleep</button>
+    <button onclick="sendCmd(FOOD)">Do you want some food?</button>
+    <button onclick="sendCmd(HIGH_FIVE)">High five</button>
+    <button onclick="sendCmd(BACKFLIP)">Backflip</button>
+    <button onclick="sendCmd(FRONTFLIP)">Frontflip</button>
+    <button onclick="sendCmd(HANDSHAKE)">Handshake</button>
+    <button onclick="sendCmd(GOOD_BOY)">Good boy</button>
+    <button onclick="sendCmd(BE_TABLE)">Be table</button>
+    <button onclick="sendCmd(BOXING)">Boxing</button>
+    <button onclick="sendCmd(JUMP)">Jump</button>
+    <button onclick="sendCmd(CLIMB_UP)">Climb up</button>
+    <button onclick="sendCmd(LEAP_OVER)">Leap over</button>
+    <button onclick="sendCmd(ANGRY)">Angry</button>
+    <button onclick="sendCmd(PET_TOY)">Pet toy</button>
+    <button onclick="sendCmd(ATTENTION)">Attention</button>
+    <button onclick="sendCmd(REST)">Rest</button>
+  </div>
+
+  <div id="status">Status: nog niet verbonden</div>
+
+  <script>
+    let bittleDevice = null;
+    let bittleServer = null;
+    let uartService = null;
+    let txCharacteristic = null;
+
+    // Nordic UART UUIDs (BLE)
+    const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const UART_TX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // write characteristic [web:51]
+
+    // Alle commando-strings (met newline)
+    const STAND_UP      = 'kup\n';
+    const SIT           = 'ksit\n';
+    const STRETCH       = 'kstr\n';
+    const PUSH_UPS      = 'kpu\n';
+    const CHEERS        = 'kchr\n';
+    const HELLO         = 'khi\n';
+    const COME_HERE     = 'kcmh\n';
+    const CHECK         = 'kck\n';
+    const STEP          = 'kvtF\n';
+    const SPIN          = 'kvtLX\n';
+    const CRAWL         = 'kcrF\n';
+    const WALK          = 'kwkF\n';
+    const RETREAT       = 'kbk\n';
+    const PUSH          = 'kphF\n';
+    const KICK          = 'kkc\n';
+    const PLAY_DEAD     = 'kpd\n';
+    const PEE           = 'kpee\n';
+    const HUG           = 'khg\n';
+    const HANDS_UP      = 'khu\n';
+    const HANDSTAND     = 'khds\n';
+    const ROLL_BACK_UP  = 'krc\n';
+    const SCRATCH       = 'kscrh\n';
+    const DIG           = 'kdg\n';
+    const SNIFF         = 'ksnf\n';
+    const SLEEP         = 'kwh\n';
+    const FOOD          = 'knd\n';
+    const HIGH_FIVE     = 'kfiv\n';
+    const BACKFLIP      = 'kbf\n';
+    const FRONTFLIP     = 'kff\n';
+    const HANDSHAKE     = 'khsk\n';
+    const GOOD_BOY      = 'kgdb\n';
+    const BE_TABLE      = 'ktbl\n';
+    const BOXING        = 'kbx\n';
+    const JUMP          = 'kjmp\n';
+    const CLIMB_UP      = 'kclup\n';
+    const LEAP_OVER     = 'klpov\n';
+    const ANGRY         = 'kang\n';
+    const PET_TOY       = 'kx\n';
+    const ATTENTION     = 'c\n';
+    const REST          = 'd\n';
+
+    // Joystick gebruikt deze:
+    const JOY_FORWARD   = WALK;     // kwkF
+    const JOY_BACK      = RETREAT;  // kbk
+    const JOY_LEFT      = SPIN;     // kvtLX (links draaien)
+    const JOY_RIGHT     = CRAWL;    // kcrF (bijv. andere richting)
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = 'Status: ' + msg;
+      console.log(msg);
+    }
+
+    async function connectBittle() {
+      try {
+        if (!navigator.bluetooth) {
+          setStatus('Web Bluetooth niet beschikbaar in deze browser.');
+          return;
+        }
+
+        setStatus('Apparaat kiezen...');
+        bittleDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [UART_SERVICE_UUID]
+        });
+
+        setStatus('Verbinden met GATT-server...');
+        bittleServer = await bittleDevice.gatt.connect();
+
+        setStatus('UART-service opvragen...');
+        uartService = await bittleServer.getPrimaryService(UART_SERVICE_UUID);
+
+        setStatus('TX-characteristic opvragen...');
+        txCharacteristic = await uartService.getCharacteristic(UART_TX_CHAR_UUID);
+
+        setStatus('Verbonden met: ' + (bittleDevice.name || 'onbekend apparaat'));
+      } catch (e) {
+        console.error(e);
+        setStatus('Fout: ' + e);
+      }
+    }
+
+    async function sendCmd(cmd) {
+      try {
+        console.log('RAW CMD:', JSON.stringify(cmd));
+        if (!txCharacteristic) {
+          setStatus('Niet verbonden. Verbind eerst met Bittle.');
+          return;
+        }
+        const encoder = new TextEncoder();
+        await txCharacteristic.writeValue(encoder.encode(cmd));
+        setStatus('Commando verstuurd: ' + cmd.trim());
+      } catch (e) {
+        console.error(e);
+        setStatus('Fout bij versturen: ' + e);
+      }
+    }
+
+    // Joystick-logica
+    const joystick = document.getElementById('joystick');
+    const joystickInfo = document.getElementById('joystickInfo');
+    let isDragging = false;
+
+    function handleJoystickEvent(clientX, clientY) {
+      const rect = joystick.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      const dx = x - rect.width / 2;
+      const dy = y - rect.height / 2;
+
+      const deadZone = 20; // px rond het midden
+      let dir = 'neutraal';
+
+      if (Math.abs(dx) < deadZone && Math.abs(dy) < deadZone) {
+        dir = 'neutraal';
+      } else if (Math.abs(dy) > Math.abs(dx)) {
+        if (dy < 0) dir = 'vooruit';
+        else dir = 'achteruit';
+      } else {
+        if (dx < 0) dir = 'links';
+        else dir = 'rechts';
+      }
+
+      joystickInfo.textContent = 'Joystick: ' + dir;
+
+      switch (dir) {
+        case 'vooruit':
+          sendCmd(JOY_FORWARD);
+          break;
+        case 'achteruit':
+          sendCmd(JOY_BACK);
+          break;
+        case 'links':
+          sendCmd(JOY_LEFT);
+          break;
+        case 'rechts':
+          sendCmd(JOY_RIGHT);
+          break;
+        case 'neutraal':
+          // GEEN automatische REST meer hier
+          break;
+      }
+    }
+
+    joystick.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      handleJoystickEvent(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        handleJoystickEvent(e.clientX, e.clientY);
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+      }
+      joystickInfo.textContent = 'Joystick: neutraal';
+      // geen automatische REST hier, alleen via knop
+    });
+
+    joystick.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      isDragging = true;
+      const t = e.touches[0];
+      handleJoystickEvent(t.clientX, t.clientY);
+    }, { passive: false });
+
+    joystick.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (isDragging) {
+        const t = e.touches[0];
+        handleJoystickEvent(t.clientX, t.clientY);
+      }
+    }, { passive: false });
+
+    joystick.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (isDragging) {
+        isDragging = false;
+      }
+      joystickInfo.textContent = 'Joystick: neutraal';
+      // geen automatische REST hier, alleen via knop
+    }, { passive: false });
+  </script>
+</body>
+</html>
