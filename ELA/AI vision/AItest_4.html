@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Grove Vision AI - 240x240 Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #000;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            background: #1a1a1a;
+            /* De canvas schaalt mee met je scherm, maar behoudt de 240x240 verhouding */
+            max-width: 100vw;
+            max-height: 100vh;
+            image-rendering: pixelated; /* Optioneel: houdt het beeld scherp bij vergroten */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="preview"></canvas>
+
+    <script>
+        const DEVICE_IP = "192.168.137.13";
+        const baseHost = `http://${DEVICE_IP}`;
+        const streamUrl = `http://${DEVICE_IP}:8080/stream`;
+
+        const streamPreview = document.getElementById('preview');
+        const streamPreviewCtx = streamPreview.getContext('2d');
+        const streamPreviewFrame = new Image();
+        let streamPreviewController = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            autoStart();
+        });
+
+        async function autoStart() {
+            try {
+                // SENSOR=1,1,0 -> De laatste '0' activeert 240x240 resolutie
+                const sensorCmd = btoa("SENSOR=1,1,0");
+                await fetch(`${baseHost}/command?base64=${sensorCmd}`, { mode: 'cors' });
+
+                const invokeCmd = btoa("INVOKE=-1,0,0");
+                const response = await fetch(`${baseHost}/command?base64=${invokeCmd}`, { mode: 'cors' });
+                const data = await response.json();
+
+                if (data.code === 0) {
+                    streamPreviewController = new AbortController();
+                    startStreamReader(`${streamUrl}/result`, streamPreviewController.signal);
+                }
+            } catch (err) {
+                console.error("Verbindingsfout:", err);
+            }
+        }
+
+        async function startStreamReader(url, signal) {
+            try {
+                const response = await fetch(url, { cache: 'no-cache', signal });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    let parts = buffer.split('\r\n');
+                    buffer = parts.pop();
+
+                    for (let part of parts) {
+                        if (part.trim()) {
+                            try {
+                                const result = JSON.parse(part);
+                                processFrame(result);
+                            } catch(e) {}
+                        part}
+                    }
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') console.error("Stream stop:", err);
+            }
+        }
+
+        function processFrame(responseResult) {
+            if (responseResult.code !== 0 || !responseResult.data.image) return;
+
+            streamPreviewFrame.onload = () => {
+                streamPreview.width = streamPreviewFrame.width;   // Wordt nu 240
+                streamPreview.height = streamPreviewFrame.height; // Wordt nu 240
+                streamPreviewCtx.drawImage(streamPreviewFrame, 0, 0);
+            };
+            streamPreviewFrame.src = `data:image/jpeg;base64,${responseResult.data.image}`;
+        }
+    </script>
+</body>
+</html>
