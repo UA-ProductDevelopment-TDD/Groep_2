@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>
+        robotdawg
+    </title>
+    <meta name="viewport" content="user-scalable=no">
+    <!-- add a stylized mono/sci-fi font -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* HUD-inspired theme and layout */
+        body {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            font-family: 'Orbitron', 'Courier New', monospace;
+            color: #BEE7A6;
+            font-size: 14px;
+            margin: 0 auto;
+            padding: 8px 0;
+            overflow: hidden;
+            background: #07160a; /* darker army green */
+            max-width: 1200px;
+            height: 100vh;
+        }
+
+        h1 {
+            color: #B7E2A1;
+            margin: 4px 0 6px 0;
+            font-size: 1.1rem;
+            letter-spacing: 2px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        /* Livestream container */
+        #livestream {
+            margin: 8px 12px;
+            width: fit-content;
+            background: #000;
+            border: 4px solid rgba(90,130,55,0.9);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* moving faint scanlines */
+        #livestream::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: linear-gradient(rgba(0,0,0,0.06) 50%, rgba(0,0,0,0) 50%);
+            background-size: 100% 3px;
+            animation: scan 6s linear infinite;
+            opacity: 0.6;
+        }
+        @keyframes scan {
+            0% { background-position-y: 0; }
+            100% { background-position-y: 100%; }
+        }
+
+        /* Crosshair */
+        .hud-crosshair {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 60%;
+            height: 60%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+        .hud-crosshair .line {
+            position: absolute;
+            background: rgba(180,255,170,0.85);
+        }
+        .hud-crosshair .horiz {
+            height: 2px;
+            left: 10%;
+            right: 10%;
+            top: 50%;
+            transform: translateY(-50%);
+            box-shadow: 0 0 8px rgba(180,255,170,0.45);
+        }
+        .hud-crosshair .vert {
+            width: 2px;
+            top: 10%;
+            bottom: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 8px rgba(180,255,170,0.45);
+        }
+        .hud-crosshair .ticks {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 120px;
+            height: 120px;
+            transform: translate(-50%, -50%);
+            border: 1px dashed rgba(180,255,170,0.12);
+            border-radius: 50%;
+            box-shadow: 0 0 20px rgba(120,200,100,0.06) inset;
+        }
+        .hud-crosshair .center-dot {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 8px;
+            height: 8px;
+            background: rgba(200,255,180,1);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(200,255,180,0.9);
+        }
+
+        /* HUD panels and info */
+        .info-panel {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            text-align: left;
+            margin: 8px 20px;
+            color: #bfe8a6;
+            flex-wrap: nowrap;
+            font-size: 0.95rem;
+            width: calc(100% - 40px);
+            max-width: 1100px;
+        }
+        .info-panel p {
+            background: linear-gradient(180deg, rgba(10,20,8,0.45), rgba(5,10,6,0.25));
+            border: 1px solid rgba(120,170,60,0.15);
+            padding: 8px 12px;
+            border-radius: 6px;
+            min-width: 160px;
+            box-shadow: 0 2px 0 rgba(0,0,0,0.5);
+        }
+
+        /* Canvas styling to blend with HUD */
+        canvas {
+            display: block;
+            width: 100%;
+            margin: 0;
+            height: 100%;
+            background: linear-gradient(180deg, rgba(10,18,8,0.85), rgba(20,36,18,0.95));
+            border-radius: 6px;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45);
+            border: 1px solid rgba(80,120,50,0.2);
+        }
+
+        /* Fire button overlay between joysticks */
+        .canvas-wrap {
+            position: relative;
+            width: calc(100% - 40px);
+            margin: 10px 20px;
+            height: 230px;
+            max-width: 1100px;
+        }
+        #fire-button {
+            /* Position handled by .control-buttons container */
+            /* transform: translate(-50%, -50%) removed as it's not needed with flexbox centering */
+            width: 76px;
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #ffb0b0, #d72626);
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(215,38,38,0.35), 0 0 30px rgba(255,80,80,0.12);
+        }
+        #fire-button:active { transform: scale(0.96); } /* Adjusted for flexbox parent */
+        #fire-button.disabled,
+        #fire-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .fire-pulse {
+            animation: fire-pulse 520ms ease;
+        }
+        @keyframes fire-pulse {
+            0% { box-shadow: 0 8px 22px rgba(215,38,38,0.35); } /* Adjusted for flexbox parent */
+            40% { box-shadow: 0 12px 38px rgba(255,80,80,0.6); } /* Adjusted for flexbox parent */
+            100% { box-shadow: 0 8px 22px rgba(215,38,38,0.35); } /* Adjusted for flexbox parent */
+        }
+
+        /* New container for control buttons */
+        .control-buttons {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%); /* Center the button group */
+            display: flex;
+            gap: 20px; /* Space between buttons */
+            z-index: 20; /* Ensure buttons are above canvas */
+        }
+
+        /* New auto-aim button styles */
+        #auto-aim-button {
+            width: 76px; /* Same size as fire button */
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #a0c0ff, #266dd7); /* Blue gradient */
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(38,109,215,0.35), 0 0 30px rgba(80,120,255,0.12);
+        }
+        #auto-aim-button:active { transform: scale(0.96); }
+        #auto-aim-button.disabled,
+        #auto-aim-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* New reset button styles */
+        #reset-button {
+            width: 76px; /* Same size as fire button */
+            height: 76px;
+            border-radius: 50%;
+            border: 0;
+            background: radial-gradient(circle at 30% 30%, #a0ffb0, #26d76d); /* Greenish gradient */
+            color: #fff;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(38,215,109,0.35), 0 0 30px rgba(80,255,120,0.12);
+        }
+        #reset-button:active { transform: scale(0.96); }
+        #reset-button.disabled,
+        #reset-button[disabled] {
+            background: #6e6e6e;
+            color: #ddd;
+            cursor: not-allowed;
+            box-shadow: none;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* center slider + probability bar */
+        .center-control {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:8px;
+            min-width:220px;
+        }
+        .center-control input[type="range"] {
+            width:220px;
+            -webkit-appearance: none;
+            height:6px;
+            background: rgba(255,255,255,0.06);
+            border-radius:6px;
+        }
+        .probability {
+            width:220px;
+            height:12px;
+            background: rgba(0,0,0,0.12);
+            border-radius:8px;
+            overflow:hidden;
+            border:1px solid rgba(0,0,0,0.08);
+        }
+        .probability-fill {
+            height:100%;
+            width:50%;
+            background: linear-gradient(90deg,#66ff66,#1db71d);
+            transition: width 120ms linear;
+        }
+        .probability-fill.low { background: linear-gradient(90deg,#ff6666,#cc2222); }
+        .probability-fill.medium { background: linear-gradient(90deg,#ffb86b,#ff8c3a); }
+        .probability-fill.high { background: linear-gradient(90deg,#66ff66,#1db71d); }
+        .probability-text {
+            color:#BFE8A6;
+            font-size:0.9rem;
+        }
+
+
+        /* small responsive tweaks */
+        @media (max-width: 720px) {
+            #livestream { height: 40vh; }
+            .info-panel { flex-direction: column; gap: 6px; align-items: stretch; }
+            .info-panel p { width: 100%; }
+            .hud-crosshair { width: 80%; height: 80%; }
+        }
+
+        .livestream-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px; /* Buffer between livestream and side panel */
+            width: 100%;
+        }
+
+        /* D-pad styles voor AIM */
+        .dpad-container {
+            position: absolute;
+            right: 25%; /* Positie van de oude Joystick 2 */
+            top: 50%;
+            transform: translate(50%, -50%);
+            display: grid;
+            grid-template-areas: 
+                ". up ."
+                "left . right"
+                ". down .";
+            gap: 8px;
+            z-index: 25;
+        }
+        .dpad-btn {
+            width: 48px;
+            height: 48px;
+            background: rgba(90,130,55,0.3);
+            border: 2px solid rgba(190, 231, 166, 0.4);
+            color: #BEE7A6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.4rem;
+            transition: all 0.1s;
+        }
+        .dpad-btn:active {
+            background: rgba(190, 231, 166, 0.7);
+            color: #07160a;
+        }
+
+        /* New side panel styles */
+        #side-panel {
+            width: 480px;
+            height: 480px;
+            background: #000; /* Same as livestream */
+            border: 4px solid rgba(90,130,55,0.9); /* Same border as livestream */
+            border-radius: 6px; /* Same border-radius as livestream */
+            box-shadow: 0 6px 0 rgba(0,0,0,0.45); /* Same shadow as livestream */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #BEE7A6; /* Inherit body color */
+            flex-direction: column; /* Ensure content stacks vertically */
+            gap: 15px; /* Spacing between radar and potential other content */
+        }
+
+        #radar-scanner {
+            width: 350px; /* Size of the radar */
+            height: 350px;
+            border-radius: 50%;
+            background: radial-gradient(circle at center, rgba(10, 30, 10, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
+            border: 2px solid rgba(90,130,55,0.7);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(90,130,55,0.4);
+        }
+
+        #radar-scanner::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(90,130,55,0) 50%, rgba(90,130,55,0.3) 100%);
+            transform-origin: center;
+            z-index: 3; /* Ensure sweep is above axes */
+            animation: radar-sweep 4s linear infinite;
+        }
+
+        #radar-scanner::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle, transparent 20%, rgba(90,130,55,0.1) 21%, transparent 22%, transparent 40%, rgba(90,130,55,0.1) 41%, transparent 42%, transparent 60%, rgba(90,130,55,0.1) 61%, transparent 62%);
+            z-index: 2; /* Ensure concentric circles are above axes */
+            border: 1px solid rgba(90,130,55,0.2);
+        }
+        @keyframes radar-sweep {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        /* Class to pause the radar sweep animation */
+        #radar-scanner.paused::before {
+            animation-play-state: paused;
+        }
+
+        #radar-targets-container {
+            position: absolute;
+            inset: 0;
+            pointer-events: none; /* Allow interaction with elements below if any */
+        }
+
+        .radar-dot {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(180, 255, 170, 0.9); /* Bright green */
+            border-radius: 50%; /* Remove animation: radar-dot-blink */
+            box-shadow: 0 0 5px rgba(180, 255, 170, 0.7);
+        }
+
+        @keyframes radar-dot-blink {
+            0% { opacity: 0.2; }
+            100% { opacity: 1; }
+        }
+
+        /* Radar Axes */
+        .radar-axis {
+            position: absolute;
+            background-color: rgba(90,130,55,0.3); /* Subtle green for axes */
+            z-index: 1; /* Below sweep and concentric circles */
+        }
+
+        .x-axis {
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 1px;
+        }
+        .y-axis {
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: 1px;
+        }
+
+        /* Radar Ticks */
+        .radar-tick {
+            position: absolute;
+            background-color: rgba(90,130,55,0.5); /* Slightly brighter than axes */
+            z-index: 1; /* Same layer as axes */
+        }
+
+        .x-tick {
+            width: 1px;
+            height: 6px; /* Small vertical line */
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .y-tick {
+            height: 1px;
+            width: 6px; /* Small horizontal line */
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        /* Button styling for radar controls */
+        .radar-control-button {
+            background-color: rgba(90,130,55,0.7);
+            color: #fff;
+            border: 1px solid rgba(180,255,170,0.4);
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Orbitron', monospace;
+            font-size: 0.75rem;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+     <h1 style="text-align:center">
+         ROBOTDAWG </h1>
+    
+    <!-- Livestream area (MJPEG) with HUD overlays -->
+    <div class="livestream-wrapper">
+    <div id="livestream" role="region" aria-label="Livestream">
+        <vision-ai-stream></vision-ai-stream>
+
+        <!-- HUD crosshair overlay -->
+        <div class="hud-crosshair" aria-hidden="true">
+            <div class="line horiz"></div>
+            <div class="line vert"></div>
+            <div class="ticks"></div>
+            <div class="center-dot"></div>
+        </div>
+    </div>
+    <div id="side-panel" role="region" aria-label="Side Information Panel">
+        <div style="margin-bottom: 20px;">ToF distance scanner</div>
+        <div id="radar-scanner" class="paused">
+            <div id="radar-targets-container"></div>
+            <div class="radar-axis x-axis"></div>
+            <div class="radar-axis y-axis"></div>
+            <!-- Ticks for X-axis (10cm = 17.5px, 20cm = 35px, ..., 100cm = 175px) -->
+            <div class="radar-tick x-tick" style="left: calc(50% + 17.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 17.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 35px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 35px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 52.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 52.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 70px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 70px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 87.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 87.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 105px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 105px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 122.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 122.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 140px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 140px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 157.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 157.5px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% + 175px);"></div>
+            <div class="radar-tick x-tick" style="left: calc(50% - 175px);"></div>
+            <!-- Ticks for Y-axis -->
+            <div class="radar-tick y-tick" style="top: calc(50% + 17.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 17.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 35px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 35px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 52.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 52.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 70px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 70px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 87.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 87.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 105px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 105px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 122.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 122.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 140px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 140px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 157.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 157.5px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% + 175px);"></div>
+            <div class="radar-tick y-tick" style="top: calc(50% - 175px);"></div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="radar-control-button" onclick="clearRadarDots()">Clear Dots</button>
+            <button class="radar-control-button" onclick="scanForNewDots()">Scan for New Dots</button>
+        </div>
+    </div>
+    </div>
+
+    
+
+    <!-- HUD / telemetry info (kept above the control canvas) -->
+    <div class="info-panel">
+        <p>
+            Joystick 1 (Links)<br>
+            X: <span id="x_coordinate1"> 0 </span>
+            Y: <span id="y_coordinate1"> 0 </span><br>
+            Speed: <span id="speed1"> 0 </span> %<br>
+            Angle: <span id="angle1"> 0 </span>
+        </p>
+        <div class="center-control" aria-hidden="false">
+            <label for="placeholder-slider" style="font-weight:700;color:#dfeeca">Threshold</label>
+            <input id="placeholder-slider" type="range" min="0" max="100" value="50" />
+            <div class="probability" aria-label="probability">
+                <div id="prob-fill" class="probability-fill"></div>
+            </div>
+            <div id="prob-text" class="probability-text">50%</div>
+        </div>
+        <div class="center-control" aria-hidden="false">
+            <label style="font-weight:700;color:#dfeeca">Bluetooth</label>
+            <button id="connect-bluetooth-button" class="radar-control-button" onclick="connectDevices()">Connect Devices</button>
+            <span id="bluetooth-status" style="font-size: 0.8rem; color: #BEE7A6;">Scanner: Disconnected</span>
+            <span id="bluetooth-status-2" style="font-size: 0.8rem; color: #BEE7A6; margin-top: 5px;">Controls: Disconnected</span>
+        </div>
+        <p>
+            Aim Controls (Rechts)<br>
+            X: <span id="x_coordinate2"> 0 </span>
+            Y: <span id="y_coordinate2"> 0 </span><br>
+            Speed: <span id="speed2"> 0 </span> %<br>
+            Angle: <span id="angle2"> 0 </span>
+        </p>
+    </div>
+ 
+    <!-- canvas wrapped so fire button can be positioned above it -->
+    <div class="canvas-wrap">
+        <canvas id="canvas" name="game"></canvas>
+        <div class="control-buttons">
+            <button id="fire-button" aria-label="Fire" title="Fire">FIRE</button>
+            <button id="auto-aim-button" aria-label="Auto Aim" title="Auto Aim">RUST</button>
+            <button id="reset-button" aria-label="Reset" title="Reset">RESET</button>
+        </div>
+        <!-- Nieuwe D-pad voor AIM -->
+        <div class="dpad-container">
+            <button class="dpad-btn dpad-up" style="grid-area: up;" onmousedown="handleDpad('up', true)" onmouseup="handleDpad('up', false)" ontouchstart="handleDpad('up', true)" ontouchend="handleDpad('up', false)">▲</button>
+            <button class="dpad-btn dpad-left" style="grid-area: left;" onmousedown="handleDpad('left', true)" onmouseup="handleDpad('left', false)" ontouchstart="handleDpad('left', true)" ontouchend="handleDpad('left', false)">◀</button>
+            <button class="dpad-btn dpad-right" style="grid-area: right;" onmousedown="handleDpad('right', true)" onmouseup="handleDpad('right', false)" ontouchstart="handleDpad('right', true)" ontouchend="handleDpad('right', false)">▶</button>
+            <button class="dpad-btn dpad-down" style="grid-area: down;" onmousedown="handleDpad('down', true)" onmouseup="handleDpad('down', false)" ontouchstart="handleDpad('down', true)" ontouchend="handleDpad('down', false)">▼</button>
+        </div>
+    </div>
+ 
+     <script>
+        // filepath: /Users/DavideJB/Documents/technology/joysticks2.html
+        var canvas, ctx;
+        var fireBtn;
+        // slider/probability hookup (replaced)
+        var autoAimBtn; // Declare globally for the new button
+        var resetBtn; // Declare globally for the new reset button
+        var autoAimButtonHidden = false; // New variable to control auto aim button visibility
+        var radarTargetsContainer; // Declare globally
+
+        // --- Start of Consolidated Bluetooth & Main Logic ---
+
+        // UUID's van de BLE UART Service
+        const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+        // Bluetooth Device 1 (Scanner)
+        let bluetoothDevice1, txCharacteristic1, rxCharacteristic1;
+        let isConnected1 = false;
+
+        // Bluetooth Device 2 (Controls)
+        let bluetoothDevice2, txCharacteristic2, rxCharacteristic2;
+        let isConnected2 = false;
+
+        let lastMoveSentTime1 = 0;
+        let lastMoveSentTime2 = 0;
+        const encoder = new TextEncoder();
+        let shouldClearDotsOnScan = true;
+        let currentBittleLevel = 0;
+        let currentConnectionAttempt = 1; // 1 for scanner, 2 for controls
+        
+        let activeRadarDots = new Map(); // Stores { angle: { element: DOM_element, timestamp: number } }
+
+        function sendBLE_1(msg) {
+            if (isConnected1 && rxCharacteristic1) {
+                try {
+                    rxCharacteristic1.writeValue(encoder.encode(msg));
+                    console.log("Sent to Device 1:", msg.trim());
+                } catch (error) {
+                    console.error("Error sending to Device 1:", error);
+                }
+            } else {
+                console.warn("Attempted to send to Device 1, but not connected:", msg.trim());
+            }
+        }
+
+        function sendBLE_2(msg) {
+            if (isConnected2 && rxCharacteristic2) {
+                try {
+                    rxCharacteristic2.writeValue(encoder.encode(msg));
+                    console.log("Sent to Device 2:", msg.trim());
+                } catch (error) {
+                    console.error("Error sending to Device 2:", error);
+                }
+            } else {
+                console.warn("Attempted to send to Device 2, but not connected:", msg.trim());
+            }
+        }
+        
+        // Global constants for radar display
+        const RADAR_SIZE = 350; // #radar-scanner width/height
+        const RADAR_RADIUS = RADAR_SIZE / 2;
+        const DOT_SIZE = 4;
+        
+        const MAX_DOT_AGE_MS = 5000; // Dots fade over 5 seconds
+        const MIN_DOT_OPACITY = 0.25; // Minimum opacity before removal
+
+
+        function setupPlaceholderSlider() {
+            var slider = document.getElementById('placeholder-slider');
+            var fill = document.getElementById('prob-fill');
+            var text = document.getElementById('prob-text');
+            if (!slider || !fill || !text) return;
+
+            window.updateProbabilityUI = function(aiScore) {
+                var threshold = parseInt(slider.value, 10);
+                var displayValue = aiScore !== undefined ? aiScore : 0;
+
+                fill.style.width = displayValue + '%';
+                text.innerText = displayValue + '%';
+
+                fill.className = 'probability-fill'; // reset
+                
+                if (displayValue < threshold) {
+                    fill.classList.add('low');
+                    if (fireBtn) {
+                        fireBtn.disabled = true;
+                        fireBtn.classList.add('disabled');
+                        fireBtn.title = 'Blocked: Probability below threshold';
+                        delete fireBtn.dataset.confirm;
+                    }
+                } else { // v >= 80
+                    fill.classList.add('high');
+                    if (fireBtn) {
+                        fireBtn.disabled = false;
+                        fireBtn.classList.remove('disabled');
+                        delete fireBtn.dataset.confirm;
+                        fireBtn.title = 'Fire';
+                    }
+                }
+
+                if (autoAimBtn) {
+                    if (autoAimButtonHidden) {
+                        autoAimBtn.style.display = 'none';
+                        autoAimBtn.disabled = true;
+                    } else {
+                        autoAimBtn.style.display = 'flex'; // Restore default display
+                        autoAimBtn.disabled = false;
+                        autoAimBtn.classList.remove('disabled');
+                        autoAimBtn.title = 'Auto Aim';
+                    }
+                }
+            };
+
+            slider.addEventListener('input', () => window.updateProbabilityUI(window.lastAiScore || 0));
+            window.updateProbabilityUI(0);
+        }
+
+        function fireAction(e) {
+            e && e.preventDefault && e.preventDefault();
+            if (!fireBtn || fireBtn.disabled) return;
+
+            fireBtn.classList.remove('fire-pulse');
+            void fireBtn.offsetWidth; // restart animation
+            fireBtn.classList.add('fire-pulse');
+
+            const fireBtnRect = fireBtn.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            const cx = fireBtnRect.left + fireBtnRect.width / 2 - canvasRect.left;
+            const cy = fireBtnRect.top + fireBtnRect.height / 2 - canvasRect.top;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,80,80,0.18)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * 0.95, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            setTimeout(drawAll, 180);
+            console.log('FIRE!');
+            
+            //sendBLE_2("ksit\n");
+            sendBLE_2("m0 100 0 -50 0 100\n");
+        }
+
+        var width, height, radius;
+        var joysticksDisabled = false;
+        
+        var joystick1_x_orig, joystick1_y_orig, joystick1_x_pos, joystick1_y_pos;
+        let joystick1_paint = false;
+        let joystick1_coord = { x: 0, y: 0 };
+
+        var joystick2_x_orig, joystick2_y_orig, joystick2_x_pos, joystick2_y_pos;
+        let joystick2_paint = false;
+        let joystick2_coord = { x: 0, y: 0 };
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            radarTargetsContainer = document.getElementById('radar-targets-container');
+            autoAimBtn = document.getElementById('auto-aim-button');
+            fireBtn = document.getElementById('fire-button');
+            resize();
+
+            setupPlaceholderSlider();
+
+            // Luister naar detectie events van de Vision AI component
+            document.addEventListener('ai-detection', (e) => {
+                window.lastAiScore = e.detail.score;
+                if (typeof window.updateProbabilityUI === 'function') {
+                    window.updateProbabilityUI(e.detail.score);
+                }
+            });
+
+            canvas.addEventListener('mousedown', startDrawing);
+            window.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mousemove', Draw);
+
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            window.addEventListener('touchend', stopDrawing);
+            window.addEventListener('touchcancel', stopDrawing);
+            canvas.addEventListener('touchmove', Draw, { passive: false });
+
+            window.addEventListener('resize', resize);
+
+            if (fireBtn) {
+                fireBtn.addEventListener('mousedown', fireAction);
+                fireBtn.addEventListener('touchstart', function(e){ e.preventDefault(); fireAction(e); }, {passive:false});
+            }
+
+            if (autoAimBtn) {
+                autoAimBtn.addEventListener('mousedown', autoAimAction);
+                autoAimBtn.addEventListener('touchstart', function(e){ e.preventDefault(); autoAimAction(e); }, {passive:false});
+            }
+            
+            resetBtn = document.getElementById('reset-button');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', resetAction);
+            }
+
+            var streamImg = document.getElementById('livestream-stream');
+            if (streamImg && streamImg.dataset.src) {
+                streamImg.src = streamImg.dataset.src;
+            }
+        });
+
+        function clearRadarDots() {
+            if (radarTargetsContainer) {
+                radarTargetsContainer.innerHTML = '';
+            }
+            if (activeRadarDots) activeRadarDots.clear();
+        }
+
+        function scanForNewDots() {
+            if (shouldClearDotsOnScan) {
+                clearRadarDots();
+            }
+            sendBLE_1("SCAN\n");
+        }
+
+        function autoAimAction(e) {
+            e && e.preventDefault && e.preventDefault();
+            console.log('Bittle in ruststand');
+            //sendBLE_1("AIM\n");
+            //sendBLE_2("ksit\n");
+            sendBLE_2("d\n"); //rust
+        }
+
+        function resetAction() {
+            sendBLE_1("RESET\n");
+            sendBLE_2("kup\n");
+            currentBittleLevel = 0;
+        }
+
+        /**
+         * Berekent en verstuurt hoeken voor Bittle X met 9 stappen omhoog/omlaag.
+         * @param {number} level - Waarde tussen -9 (max omlaag) en 9 (max omhoog).
+         */
+        async function stuurBittleHouding9Stappen(level) {
+            // Beperk de input tussen -9 en 9
+            level = Math.max(-9, Math.min(9, level));
+
+            let armV, kneeV, armA, kneeA;
+
+            if (level >= 0) {
+                // OMHOOG (Schaalfactor: we delen door 3 omdat 9 stappen nu 3 eenheden bereiken)
+                armV  = (5 / 3) * level + 30;   // Index 12 & 13
+                kneeV = (5 / 3) * level + 30;   // Index 8 & 9
+                armA  = (25 / 3) * level + 30;  // Index 11 & 10
+                kneeA = (-25 / 3) * level + 30; // Index 15 & 14
+            } else {
+                // OMLAAG (Schaalfactor: we delen het effect door 3)
+                armV  = 10 * level + 30;        // 30 / 3 = 10
+                kneeV = (-20 / 3) * level + 30; 
+                armA  = (8 / 3) * level + 30;
+                kneeA = (-5 / 3) * level + 30;
+            }
+
+            // Bouw het gecoördineerde commando voor alle 8 motoren
+            const cmd = `i 12 ${Math.round(armV)} 13 ${Math.round(armV)} ` + 
+                        `8 ${Math.round(kneeV)} 9 ${Math.round(kneeV)} ` +   
+                        `11 ${Math.round(armA)} 10 ${Math.round(armA)} ` +  
+                        `15 ${Math.round(kneeA)} 14 ${Math.round(kneeA)}\n`;
+            
+            sendBLE_2(cmd);
+        }
+
+        // D-pad logica voor AIM (vervangt Joystick 2)
+        let dpadTimer = null;
+        function handleDpad(dir, active) {
+            if (dpadTimer) { clearInterval(dpadTimer); dpadTimer = null; }
+            
+            const x_el = document.getElementById("x_coordinate2");
+            const y_el = document.getElementById("y_coordinate2");
+            const s_el = document.getElementById("speed2");
+            const a_el = document.getElementById("angle2");
+
+            if (!active) {
+                x_el.innerText = 0; y_el.innerText = 0; s_el.innerText = 0; a_el.innerText = 0;
+                return;
+            }
+
+            s_el.innerText = 50;
+
+            if (dir === 'up' || dir === 'down') {
+                // Discrete stap omhoog of omlaag
+                if (dir === 'up') {
+                    currentBittleLevel = Math.min(9, currentBittleLevel + 1);
+                    y_el.innerText = -50; a_el.innerText = 90;
+                } else {
+                    currentBittleLevel = Math.max(-9, currentBittleLevel - 1);
+                    y_el.innerText = 50; a_el.innerText = 270;
+                }
+                stuurBittleHouding9Stappen(currentBittleLevel);
+            } else {
+                // Links/Rechts (Arduino pan) blijft herhalen zolang ingedrukt
+                const send = () => {
+                    if (dir === 'left') {
+                        x_el.innerText = -50; y_el.innerText = 0; a_el.innerText = 180; sendBLE_1("J2;-50;0;50;180\n");
+                    } else if (dir === 'right') {
+                        x_el.innerText = 50; y_el.innerText = 0; a_el.innerText = 0; sendBLE_1("J2;50;0;50;0\n");
+                    }
+                };
+                send();
+                dpadTimer = setInterval(send, 200);
+            }
+        }
+
+        function getPosition(event) {
+            let rect = canvas.getBoundingClientRect();
+            let x, y;
+
+            if (event.touches && event.touches.length > 0) {
+                x = event.touches[0].clientX - rect.left;
+                y = event.touches[0].clientY - rect.top;
+            } else {
+                x = event.clientX - rect.left;
+                y = event.clientY - rect.top;
+            }
+            return { x: x, y: y };
+        }
+        
+        function is_it_in_the_circle(x, y, x_orig, y_orig) {
+            var current_radius = Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2));
+            return radius + 20 >= current_radius;
+        }
+
+        function resize() {
+            width = canvas.clientWidth;
+            height = canvas.clientHeight;
+            radius = Math.min(width / 6, height / 3, 100) * 0.7;
+
+            ctx.canvas.width = Math.floor(width);
+            ctx.canvas.height = Math.floor(height);
+            
+            joystick1_x_orig = width / 4;
+            joystick1_y_orig = height / 2;
+            
+            joystick2_x_orig = width * 3 / 4;
+            joystick2_y_orig = height / 2;
+
+            joystick1_x_pos = joystick1_x_orig;
+            joystick1_y_pos = joystick1_y_orig;
+            joystick2_x_pos = joystick2_x_orig;
+            joystick2_y_pos = joystick2_y_orig;
+
+            drawAll();
+        }
+
+        function background(x_orig, y_orig) {
+            ctx.beginPath();
+            ctx.arc(x_orig, y_orig, radius + 20, 0, Math.PI * 2, true);
+            ctx.fillStyle = joysticksDisabled ? 'rgba(80,80,80,0.2)' : '#cfd9b8';
+            ctx.fill();
+        }
+
+        function joystick(x, y, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = joysticksDisabled ? '#333' : '#394b1f';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+        }
+
+        function drawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            var c1 = joysticksDisabled ? '#555' : '#C2B280';
+            // Joystick 2 wordt niet meer getekend
+
+            background(joystick1_x_orig, joystick1_y_orig);
+            joystick(joystick1_x_pos, joystick1_y_pos, c1);
+            
+            // background(joystick2_x_orig, joystick2_y_orig);
+            // joystick(joystick2_x_pos, joystick2_y_pos, c2);
+
+            ctx.font = '12px Orbitron, "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#BEE7A6';
+            const labelOffset = radius + 35;
+
+            ctx.fillText('WALK', joystick1_x_orig, joystick1_y_orig + labelOffset);
+            // ctx.fillText('AIM', joystick2_x_orig, joystick2_y_orig + labelOffset);
+        }
+
+        function startDrawing(event) {
+            event.preventDefault();
+            if (joysticksDisabled) return;
+            
+            let coords;
+            if (event.touches && event.touches.length > 0) {
+                for (let i = 0; i < event.touches.length; i++) {
+                    coords = getPosition(event.touches[i]);
+                    if (!joystick1_paint && is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                        joystick1_paint = true;
+                        joystick1_coord = coords;
+                        Draw(event.touches[i], 1);
+                        return;
+                    } 
+                    // Joystick 2 touch genegeerd voor canvas
+                    // else if (!joystick2_paint && is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                    //     joystick2_paint = true;
+                    //     joystick2_coord = coords;
+                    //     Draw(event.touches[i], 2);
+                    //     return;
+                    // }
+                }
+            } 
+            else {
+                coords = getPosition(event);
+                if (is_it_in_the_circle(coords.x, coords.y, joystick1_x_orig, joystick1_y_orig)) {
+                    joystick1_paint = true;
+                    joystick1_coord = coords;
+                    Draw(event, 1);
+                } 
+                // else if (is_it_in_the_circle(coords.x, coords.y, joystick2_x_orig, joystick2_y_orig)) {
+                //     joystick2_paint = true;
+                //     joystick2_coord = coords;
+                //     Draw(event, 2);
+                // }
+            }
+        }
+
+        function stopDrawing(event) {
+            event.preventDefault();
+            let shouldRedraw = false;
+            
+            if (joystick1_paint) {
+                joystick1_paint = false;
+                joystick1_x_pos = joystick1_x_orig;
+                joystick1_y_pos = joystick1_y_orig;
+                document.getElementById("x_coordinate1").innerText = 0;
+                document.getElementById("y_coordinate1").innerText = 0;
+                document.getElementById("speed1").innerText = 0;
+                document.getElementById("angle1").innerText = 0;
+                shouldRedraw = true;
+                sendBLE_2("kup\n");
+            }
+
+            if (joystick2_paint) {
+                joystick2_paint = false;
+                joystick2_x_pos = joystick2_x_orig;
+                joystick2_y_pos = joystick2_y_orig;
+                document.getElementById("x_coordinate2").innerText = 0;
+                document.getElementById("y_coordinate2").innerText = 0;
+                document.getElementById("speed2").innerText = 0;
+                document.getElementById("angle2").innerText = 0;
+                shouldRedraw = true;
+                //sendBLE_1("J2;0;0;0;0\n");
+                //sendBLE_2("kup\n");
+            }
+            
+            if (shouldRedraw) {
+                drawAll();
+            }
+        }
+
+        function Draw(event, specific_joystick_id = 0) {
+            event.preventDefault();
+            if (joysticksDisabled) return;
+
+            if (!event.touches && (joystick1_paint || joystick2_paint)) {
+                let coords = getPosition(event);
+                if (joystick1_paint) {
+                    joystick1_coord = coords;
+                    updateJoystick(1);
+                } 
+                // else if (joystick2_paint) {
+                //     joystick2_coord = coords;
+                //     updateJoystick(2);
+                // }
+            } 
+            else if (event.touches && event.touches.length > 0) {
+                drawAll();
+                for (let i = 0; i < event.touches.length; i++) {
+                    let coords = getPosition(event.touches[i]);
+                    if (joystick1_paint) {
+                        joystick1_coord = coords;
+                        updateJoystick(1);
+                    }
+                    // if (joystick2_paint) {
+                    //     joystick2_coord = coords;
+                    //     updateJoystick(2);
+                    // }
+                }
+            }
+            else if (specific_joystick_id === 1 && joystick1_paint) {
+                 updateJoystick(1);
+            } else if (specific_joystick_id === 2 && joystick2_paint) {
+                 updateJoystick(2);
+            }
+            
+            if (joystick1_paint || joystick2_paint) {
+                drawAll();
+            }
+        } 
+
+        function updateJoystick(id) {
+            let x_orig, y_orig, coord;
+            let x_coord_id, y_coord_id, speed_id, angle_id;
+            
+            if (id === 1) {
+                x_orig = joystick1_x_orig; y_orig = joystick1_y_orig; coord = joystick1_coord;
+                x_coord_id = "x_coordinate1"; y_coord_id = "y_coordinate1";
+                speed_id = "speed1"; angle_id = "angle1";
+            } else if (id === 2) {
+                x_orig = joystick2_x_orig; y_orig = joystick2_y_orig; coord = joystick2_coord;
+                x_coord_id = "x_coordinate2"; y_coord_id = "y_coordinate2";
+                speed_id = "speed2"; angle_id = "angle2";
+            } else {
+                return;
+            }
+
+            var angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
+            var current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
+
+            let x, y;
+            if (radius >= current_radius) {
+                x = coord.x; y = coord.y;
+            } else {
+                x = radius * Math.cos(angle) + x_orig;
+                y = radius * Math.sin(angle) + y_orig;
+            }
+
+            if (id === 1) {
+                joystick1_x_pos = x; joystick1_y_pos = y;
+            } else {
+                joystick2_x_pos = x; joystick2_y_pos = y;
+            }
+
+            let angle_in_degrees = (Math.sign(angle) == -1) ? Math.round(-angle * 180 / Math.PI) : Math.round(360 - angle * 180 / Math.PI);
+            var speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
+            var x_relative = Math.round(x - x_orig);
+            var y_relative = Math.round(y - y_orig);
+            
+            document.getElementById(x_coord_id).innerText = x_relative;
+            document.getElementById(y_coord_id).innerText = y_relative;
+            document.getElementById(speed_id).innerText = speed;
+            document.getElementById(angle_id).innerText = angle_in_degrees;
+
+            let command  = ""
+
+            if (id === 1) {
+                // linker joystick --> walk --> enkel sturen naar bittle
+                if ((angle_in_degrees >= 0 && angle_in_degrees <= 30) || (angle_in_degrees >= 330 && angle_in_degrees <= 360)) {
+                    //"turn right on axis";
+                    command = 'kvtR\n';
+                } else if (angle_in_degrees > 30 && angle_in_degrees <= 60) {
+                    //"walk right";
+                    command = 'ktrR\n';
+                } else if (angle_in_degrees > 60 && angle_in_degrees <= 120) {
+                    //"walk";
+                    command = 'ktrF\n';
+                } else if (angle_in_degrees > 120 && angle_in_degrees <= 150) {
+                    //"walk left";
+                    command = 'ktrL\n';
+                } else if (angle_in_degrees > 150 && angle_in_degrees <= 210) {
+                    //"turn left on axis";
+                    command = 'kvtL\n';
+                } else if (angle_in_degrees > 210 && angle_in_degrees < 330) {
+                    //"retreat";
+                    command = 'kbk\n';
+                }
+                const now = Date.now();
+                //const lastSentTime = lastMoveSentTime1
+                if (now - lastMoveSentTime1 >= 500) { // Rate limit to 2 messages per second
+                    // send data to bittle
+                    sendBLE_2(command);
+                    lastMoveSentTime1 = now;
+                }
+            } else {
+                // rechter joystick
+                // Omhoog en omlaag naar de bittle
+                // links en rechts naar de arduino. 
+                const now = Date.now();
+                if (now - lastMoveSentTime2 >= 500) { 
+                    if (angle_in_degrees > 45 && angle_in_degrees <= 135) {
+                        // bittle omhoog
+                        command = '\n';
+                        sendBLE_2(command);
+                    } else if (angle_in_degrees > 225 && angle_in_degrees <= 315) {
+                        // bittle omlaag
+                        command = '\n';
+                        sendBLE_2(command);
+                    } else {
+                        // positie van joystick sturen naar arduino
+                        const prefix = 'J2';
+                        const command = `${prefix};${x_relative};${y_relative};${speed};${angle_in_degrees}\n`;
+                        // send data to bittle
+                        sendBLE_1(command);
+                    }
+                }
+                lastMoveSentTime2 = now;
+            }
+        } 
+
+        // --- Bluetooth Connection Logic ---
+
+        async function connectDevices() {
+            if (currentConnectionAttempt === 1) {
+                await _connectDevice(1);
+            } else if (currentConnectionAttempt === 2) {
+                await _connectDevice(2);
+            }
+        }
+
+        async function _connectDevice(deviceNum) {
+            if (!('bluetooth' in navigator)) {
+                alert('Web Bluetooth is not available on this browser.');
+                return;
+            }
+
+            const statusId = (deviceNum === 1) ? 'bluetooth-status' : 'bluetooth-status-2';
+            const statusDisplay = document.getElementById(statusId);
+            const connectButton = document.getElementById('connect-bluetooth-button');
+
+            try {
+                statusDisplay.textContent = `Scanning for Device ${deviceNum}...`;
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { namePrefix: 'BittleC2' },
+                        { namePrefix: 'XIAO' },
+                        { namePrefix: 'UNO' }
+                    ],
+                    optionalServices: [UART_SERVICE_UUID]
+                });
+
+                statusDisplay.textContent = `Connecting to ${device.name || `Device ${deviceNum}`}...`;
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(UART_SERVICE_UUID);
+                const txChar = await service.getCharacteristic(UART_TX_CHAR_UUID);
+                const rxChar = await service.getCharacteristic(UART_RX_CHAR_UUID);
+
+                if (deviceNum === 1) {
+                    bluetoothDevice1 = device;
+                    rxCharacteristic1 = rxChar;
+                    txCharacteristic1 = txChar;
+                    isConnected1 = true;
+                    device.addEventListener('gattserverdisconnected', onDisconnected1);
+                    await txChar.startNotifications();
+                    txChar.addEventListener('characteristicvaluechanged', handleCharacteristicNotifications1);
+                    
+                    statusDisplay.textContent = `Scanner: ${device.name || 'Device 1'} Connected`;
+                    document.getElementById('radar-scanner').classList.remove('paused');
+                    connectButton.textContent = 'Connect Controls (2/2)';
+                    currentConnectionAttempt = 2;
+                } else { // deviceNum === 2
+                    bluetoothDevice2 = device;
+                    rxCharacteristic2 = rxChar;
+                    txCharacteristic2 = txChar;
+                    isConnected2 = true;
+                    device.addEventListener('gattserverdisconnected', onDisconnected2);
+                    await txChar.startNotifications();
+                    txChar.addEventListener('characteristicvaluechanged', handleCharacteristicNotifications2);
+
+                    sendBLE_2("X65,100\n");
+
+                    statusDisplay.textContent = `Controls: ${device.name || 'Device 2'} Connected`;
+                    connectButton.textContent = 'All Connected';
+                    connectButton.disabled = true;
+                    currentConnectionAttempt = 3;
+                }
+
+            } catch (error) {
+                console.error(`Bluetooth Device ${deviceNum} connection error:`, error);
+                statusDisplay.textContent = `Device ${deviceNum} connection failed.`;
+            }
+        }
+
+        function onDisconnected1() {
+            isConnected1 = false;
+            console.log('Bluetooth Scanner (Device 1) disconnected.');
+            document.getElementById('bluetooth-status').textContent = 'Scanner: Disconnected';
+            document.getElementById('radar-scanner').classList.add('paused');
+            
+            const connectButton = document.getElementById('connect-bluetooth-button');
+            connectButton.disabled = false;
+            connectButton.textContent = 'Connect Devices';
+            currentConnectionAttempt = 1;
+            
+            if(isConnected2) onDisconnected2();
+            document.getElementById('bluetooth-status-2').textContent = 'Controls: Disconnected';
+        }
+
+        function onDisconnected2() {
+            isConnected2 = false;
+            console.log('Bluetooth Controls (Device 2) disconnected.');
+            document.getElementById('bluetooth-status-2').textContent = 'Controls: Disconnected';
+            
+            if (isConnected1) {
+                const connectButton = document.getElementById('connect-bluetooth-button');
+                connectButton.disabled = false;
+                connectButton.textContent = 'Connect Controls (2/2)';
+                currentConnectionAttempt = 2;
+            }
+        }
+
+        function handleCharacteristicNotifications1(event) {
+            const value = event.target.value;
+            const dataString = new TextDecoder().decode(value);
+            console.log('Received from Scanner (Dev 1):', dataString);
+
+            const dataPairs = dataString.split(';');
+            const radarData = [];
+            for (let i = 0; i < dataPairs.length; i += 2) {
+                const angle = parseFloat(dataPairs[i]);
+                const distance = parseFloat(dataPairs[i + 1]);
+                if (!isNaN(angle) && !isNaN(distance)) {
+                    radarData.push({ angle: angle, distance: distance });
+                }
+            }
+            updateRadarDots(radarData);
+        }
+
+        function handleCharacteristicNotifications2(event) {
+            const value = event.target.value;
+            const dataString = new TextDecoder().decode(value);
+            console.log('Received from Controls (Dev 2):', dataString);
+        }
+
+        function updateRadarDots(data) {
+            if (!radarTargetsContainer) return;
+        
+            const cmToPixelRatio = 1.75;
+            const now = Date.now();
+            const reportedAngles = new Set();
+        
+            data.forEach(item => {
+                reportedAngles.add(item.angle);
+                const angleRadians = item.angle * Math.PI / 180;
+                const distancePixels = item.distance * cmToPixelRatio;
+                let dotEntry = activeRadarDots.get(item.angle);
+        
+                if (dotEntry && dotEntry.element.parentNode) {
+                    dotEntry.element.parentNode.removeChild(dotEntry.element);
+                    activeRadarDots.delete(item.angle);
+                }
+                
+                const newDot = document.createElement('div');
+                newDot.classList.add('radar-dot');
+                radarTargetsContainer.appendChild(newDot);
+                dotEntry = { element: newDot, timestamp: now };
+                activeRadarDots.set(item.angle, dotEntry);
+        
+                const xOffset = distancePixels * Math.sin(angleRadians);
+                const yOffset = -distancePixels * Math.cos(angleRadians);
+                dotEntry.element.style.left = `${RADAR_RADIUS + xOffset - DOT_SIZE / 2}px`;
+                dotEntry.element.style.top = `${RADAR_RADIUS + yOffset - DOT_SIZE / 2}px`;
+                dotEntry.element.style.opacity = 1;
+            });
+        }
+
+        function fadeAndRemoveOldDots() {
+            const now = Date.now();
+            for (let [angle, dotEntry] of activeRadarDots) {
+                const age = now - dotEntry.timestamp;
+                const opacity = Math.max(MIN_DOT_OPACITY, 1 - (age / MAX_DOT_AGE_MS));
+                dotEntry.element.style.opacity = opacity;
+            }
+        }
+        
+        setInterval(fadeAndRemoveOldDots, 100);
+
+        // Zorg ervoor dat de joysticks opnieuw getekend worden zodra het Orbitron font geladen is
+        // Dit voorkomt dat de tekst van grootte verandert na de eerste interactie.
+        if (document.fonts) {
+            document.fonts.ready.then(function() {
+                drawAll();
+            });
+        }
+    </script>
+    <script>
+    class VisionAiStream extends HTMLElement {
+        constructor() {
+            super();
+            this.attachShadow({ mode: 'open' });
+            this.isStreaming = false;
+            this.controller = null;
+        }
+
+        connectedCallback() {
+            this.render();
+            this.startCamera();
+        }
+
+        render() {
+            this.shadowRoot.innerHTML = `
+            <style>
+                :host { display: block; width: 100%; height: 100%; }
+                canvas { 
+                    background: #000; 
+                    width: 100%; 
+                    height: 100%;
+                    object-fit: cover;
+                    image-rendering: pixelated;
+                }
+            </style>
+            <canvas id="preview"></canvas>
+            `;
+        }
+
+        async startCamera() {
+            const ip = "192.168.137.142";
+            const optId = 1; // Resolutie: 1 = 480x480
+            const rotId = 1; // Rotatie: 1 = 90 graden (0=Default, 1=90°, 2=180°, 3=270°)
+            const optCfg = (((1 << rotId) & 0b1110) << 11) | optId;
+            const canvas = this.shadowRoot.getElementById('preview');
+            const ctx = canvas.getContext('2d');
+            const baseHost = `http://${ip}`;
+
+            try {
+                const sensorCmd = btoa(`SENSOR=1,1,${optCfg}`);
+                await fetch(`${baseHost}/command?base64=${sensorCmd}`);
+                const invokeCmd = btoa("INVOKE=-1,0,0");
+                const resp = await fetch(`${baseHost}/command?base64=${invokeCmd}`);
+                const data = await resp.json();
+
+                if (data.code === 0) {
+                    this.isStreaming = true;
+                    this.controller = new AbortController();
+                    this.readStream(`${baseHost}:8080/stream/result`, ctx, canvas, this.controller.signal);
+                }
+            } catch (err) { console.error("Vision AI Error:", err); }
+        }
+
+        async readStream(url, ctx, canvas, signal) {
+            const response = await fetch(url, { cache: 'no-cache', signal });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const img = new Image();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                let parts = buffer.split('\r\n');
+                buffer = parts.pop();
+                for (let part of parts) {
+                    if (!part.trim()) continue;
+                    try {
+                        const result = JSON.parse(part);
+                        if (result.data?.image) {
+                            // Forceer 90 graden rotatie als de camera het niet meestuurt
+                            const rotate = result.data.rotate !== undefined ? result.data.rotate : 90;
+                            await new Promise(resolve => {
+                                img.onload = () => {
+                                    if (rotate === 90 || rotate === 270) {
+                                        canvas.width = img.height;
+                                        canvas.height = img.width;
+                                    } else {
+                                        canvas.width = img.width;
+                                        canvas.height = img.height;
+                                    }
+
+                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                                    // 1. Teken het beeld gedraaid
+                                    ctx.save();
+                                    ctx.translate(canvas.width / 2, canvas.height / 2);
+                                    ctx.rotate((rotate * Math.PI) / 180);
+                                    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                                    ctx.restore();
+
+                                    // 2. Teken de boxes rechtop op de nieuwe coördinaten
+                                    if (result.data.boxes) {
+                                        this.drawBoxes(ctx, result.data.boxes, rotate, img.width, img.height);
+                                    }
+
+                                    // Verstuur event met de hoogste score voor de HUD
+                                    if (result.data.boxes && result.data.boxes.length > 0) {
+                                        const topScore = Math.max(...result.data.boxes.map(b => b[4]));
+                                        this.dispatchEvent(new CustomEvent('ai-detection', {
+                                            detail: { score: topScore },
+                                            bubbles: true,
+                                            composed: true
+                                        }));
+                                    } else {
+                                        this.dispatchEvent(new CustomEvent('ai-detection', { detail: { score: 0 } }));
+                                    }
+                                    resolve();
+                                };
+                                img.src = `data:image/jpeg;base64,${result.data.image}`;
+                            });
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+
+        drawBoxes(ctx, boxes, rotate, imgW, imgH) {
+            ctx.strokeStyle = '#8dc215';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 14px Orbitron, sans-serif';
+            ctx.fillStyle = '#8dc215';
+            
+            boxes.forEach(box => {
+                const [x, y, w, h, score, target] = box;
+                let cx, cy, cw, ch;
+
+                // Map de coördinaten van het originele frame naar het gedraaide canvas
+                if (rotate === 90) {
+                    cx = imgH - y;
+                    cy = x;
+                    cw = h;
+                    ch = w;
+                } else if (rotate === 180) {
+                    cx = imgW - x;
+                    cy = imgH - y;
+                    cw = w;
+                    ch = h;
+                } else if (rotate === 270) {
+                    cx = y;
+                    cy = imgW - x;
+                    cw = h;
+                    ch = w;
+                } else {
+                    cx = x; cy = y; cw = w; ch = h;
+                }
+
+                const bx = cx - cw / 2;
+                const by = cy - ch / 2;
+
+                ctx.strokeRect(bx, by, cw, ch);
+                ctx.fillRect(bx, by - 20, cw, 20);
+                ctx.fillStyle = '#000';
+                ctx.fillText(`${target}: ${score}%`, bx + 5, by - 5);
+                ctx.fillStyle = '#8dc215';
+            });
+        }
+    }
+    // Registreer het nieuwe element
+    customElements.define('vision-ai-stream', VisionAiStream);
+    </script>
+ </body>
+ </html>
