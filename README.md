@@ -4,7 +4,7 @@
 Web-based Control, Vision AI & Radar System
 RobotDawg (ook WarDog genoemd) is een experimenteel robotplatform dat een Petoi Bittle X quadruped robot combineert met een webgebaseerde HUD-interface, real-time Vision AI, Bluetooth-besturing en een actieve ToF-radar scanner.
 Het project focust op de integratie van sensing, visuele AI en fysieke robotbesturing binnen één centrale webinterface.
-________________________________________
+
 ## Systeemoverzicht
 ### Het systeem bestaat uit drie hoofdcomponenten:
 1.	Web Interface (Laptop / Browser)
@@ -21,7 +21,7 @@ o	Bluetooth Low Energy (UART)
 o	MJPEG videostream
 o	AI-objectdetectie
 o	Model getraind via SenseCraft AI Studio
-________________________________________
+
 ## Functionaliteiten
 ### Vision AI Livestream
 •	Real-time MJPEG videostream
@@ -48,14 +48,14 @@ o	Omhoog/omlaag: houding van Bittle X in 9 discrete stappen
 •	Punten worden weergegeven op een radarscherm
 •	Punten vervagen na verloop van tijd
 •	Ondersteuning voor handmatige en automatische scans
-________________________________________
+
 ## Bluetooth Communicatie
 De webinterface verbindt met twee afzonderlijke BLE-devices via UART-over-BLE:
 Device	Functie
 Device 1	Scanner unit (ToF + servo)
 Device 2	Petoi Bittle X (beweging & houding)
 Communicatie verloopt via tekstgebaseerde commando’s en is rate-limited om stabiliteit te garanderen.
-________________________________________
+
 ## Scanner Unit – Arduino UNO R4 WiFi
 ### Hardware
 •	Arduino UNO R4 WiFi
@@ -73,13 +73,13 @@ Afstanden worden verzonden in centimeters (mm / 10).
 ### Belangrijke aandachtspunten
 •	I2C-adressering gebeurt via XSHUT-pinnen
 •	Rate limiting voorkomt instabiliteit van de I2C-bus
-________________________________________
+
 ## Vision AI Camera
 •	XIAO ESP32-S3 met Grove Vision AI v2
 •	Gebaseerd op Seeed Arduino SSCMA library
 •	Camera web server voor MJPEG streaming
 •	AI-model getraind via SenseCraft AI Studio
-________________________________________
+
 ## Configuratie
 
 ### Camera IP (Web Interface)
