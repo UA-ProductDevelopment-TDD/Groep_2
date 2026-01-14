@@ -107,8 +107,6 @@ In camera_web_server sketch:
 const char* ssid = "JULLIE_WIFI_NAAM";
 const char* password = "JULLIE_WIFI_WACHTWOORD";
 
----
-
 ## Getting Started
 
 1. Flash camera_web_server naar XIAO ESP32-S3
@@ -119,8 +117,7 @@ const char* password = "JULLIE_WIFI_WACHTWOORD";
 6. Open joysticks2_FINAAL.html in browser
 7. Verbind beide Bluetooth devices
 
-
-Team
+## Team
 Project ontwikkeld door Groep 2
 RobotDawg / WarDog – experimenteel robotplatform voor integratie van robotbesturing, sensing en Vision AI.
 
